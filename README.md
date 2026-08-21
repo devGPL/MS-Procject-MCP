@@ -166,6 +166,29 @@ Libere a porta no firewall, uma vez só (PowerShell como administrador):
 New-NetFirewallRule -DisplayName "MS Project MCP" -Direction Inbound -LocalPort 8765 -Protocol TCP -Action Allow
 ```
 
+### Subir junto com o Windows
+
+Para não depender de abrir um terminal a cada login, crie `C:\msproject-mcp\start-server.cmd`:
+
+```bat
+@echo off
+title MS Project MCP Server
+set LOG=%LOCALAPPDATA%\msproject-mcp.log
+echo ===== iniciado em %DATE% %TIME% ===== >> "%LOG%"
+"%LOCALAPPDATA%\Programs\Python\Python312-arm64\Scripts\msproject-mcp.exe" --transport streamable-http --host 0.0.0.0 --port 8765 >> "%LOG%" 2>&1
+echo ===== encerrado em %DATE% %TIME% (codigo %ERRORLEVEL%) ===== >> "%LOG%"
+```
+
+E um `.vbs` na pasta Inicializar (`Win+R` → `shell:startup`) para lançá-lo minimizado:
+
+```vbs
+CreateObject("WScript.Shell").Run """C:\msproject-mcp\start-server.cmd""", 7, False
+```
+
+A pasta Inicializar roda na sessão interativa e sem elevação, que é exatamente o que o COM exige. Um Agendador de Tarefas configurado com "executar com privilégios mais altos" **quebraria** por causa do nível de integridade.
+
+O log em `%LOCALAPPDATA%\msproject-mcp.log` é onde procurar quando o servidor não sobe — a janela minimizada some sem deixar rastro se o processo morrer.
+
 ### No Mac
 
 ```bash

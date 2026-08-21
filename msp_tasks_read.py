@@ -25,6 +25,8 @@ import json
 import datetime
 
 from msp_core import (
+    TIMESCALE_MAP,
+    CONSTRAINT_NAMES,
     mcp,
     get_app,
     get_proj,
@@ -234,12 +236,6 @@ def get_wbs_structure(max_level: int = 0) -> str:
     mpd = _get_mpd(proj)
     mpd  = _get_mpd(proj)
 
-    def fmt(dt):
-        try:
-            return str(dt)[:10] if dt else None
-        except Exception:
-            return None
-
     # Build flat list first
     flat = []
     for t in proj.Tasks:
@@ -254,8 +250,8 @@ def get_wbs_structure(max_level: int = 0) -> str:
             "level":         t.OutlineLevel,
             "summary":       bool(t.Summary),
             "milestone":     bool(t.Milestone),
-            "start":         fmt(t.Start),
-            "finish":        fmt(t.Finish),
+            "start":         _fmt_date(t.Start),
+            "finish":        _fmt_date(t.Finish),
             "duration_days": round(t.Duration / mpd, 2) if t.Duration else 0,
             "children":      [],
         })
@@ -681,10 +677,6 @@ def apply_filter(filter_name: str) -> str:
 @mcp.tool()
 def get_constraints() -> str:
     """Return all tasks with non-default (non-ASAP) scheduling constraints."""
-    CONSTRAINT_NAMES = {
-        0: "ASAP", 1: "ALAP", 2: "MSO", 3: "MFO",
-        4: "SNET", 5: "SNLT", 6: "FNET", 7: "FNLT",
-    }
     app  = get_app()
     proj = get_proj(app)
 
@@ -779,7 +771,6 @@ def get_timephased_data(
     app  = get_app()
     proj = get_proj(app)
 
-    TIMESCALE_MAP = {"daily": 3, "weekly": 4, "monthly": 5}
     ts = TIMESCALE_MAP.get(timescale.lower())
     if ts is None:
         return json.dumps({"error": f"Unknown timescale '{timescale}'. Use: daily, weekly, monthly."})

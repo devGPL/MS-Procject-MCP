@@ -35,6 +35,9 @@ CONSTRAINT_NAMES = {
 }
 TASK_TYPE_NAMES = {0: "FixedUnits", 1: "FixedDuration", 2: "FixedWork"}
 
+# pjTimescaleUnit values accepted by the timephased APIs.
+TIMESCALE_MAP = {"daily": 3, "weekly": 4, "monthly": 5}
+
 
 # ---------------------------------------------------------------------------
 # COM helpers

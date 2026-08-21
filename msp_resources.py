@@ -20,6 +20,7 @@ carries it; it must never be sliced apart.
 import json
 
 from msp_core import (
+    TIMESCALE_MAP,
     mcp,
     get_app,
     get_proj,
@@ -454,7 +455,6 @@ def get_resource_availability(
     app  = get_app()
     proj = get_proj(app)
 
-    TIMESCALE_MAP = {"daily": 3, "weekly": 4, "monthly": 5}
     ts = TIMESCALE_MAP.get(timescale.lower())
     if ts is None:
         return json.dumps({"error": f"Unknown timescale '{timescale}'. Use: daily, weekly, monthly."})

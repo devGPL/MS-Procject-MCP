@@ -57,12 +57,6 @@ def get_schedule_analysis() -> str:
     mpd = _get_mpd(proj)
     mpd  = _get_mpd(proj)
 
-    def fmt(dt):
-        try:
-            return str(dt)[:10] if dt else None
-        except Exception:
-            return None
-
     tasks = []
     zero_float = 0
     negative_float = 0
@@ -95,8 +89,8 @@ def get_schedule_analysis() -> str:
             "total_slack_days": ts,
             "free_slack_days":  fs,
             "critical":        bool(t.Critical),
-            "start":           fmt(t.Start),
-            "finish":          fmt(t.Finish),
+            "start":           _fmt_date(t.Start),
+            "finish":          _fmt_date(t.Finish),
         })
 
     return json.dumps({

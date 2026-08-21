@@ -91,12 +91,6 @@ def get_project_info() -> str:
     mpd = _get_mpd(proj)
     mpd  = _get_mpd(proj)
 
-    def fmt(dt):
-        try:
-            return str(dt)[:10] if dt else None
-        except Exception:
-            return None
-
     task_count    = sum(1 for t in proj.Tasks if t is not None)
     summary_count = sum(1 for t in proj.Tasks if t is not None and t.Summary)
     mile_count    = sum(1 for t in proj.Tasks if t is not None and t.Milestone)
@@ -117,9 +111,9 @@ def get_project_info() -> str:
         "company":         safe_read("Company"),
         "author":          safe_read("Author"),
         "subject":         safe_read("Subject"),
-        "start":           fmt(proj.ProjectStart),
-        "finish":          fmt(proj.ProjectFinish),
-        "status_date":     fmt(getattr(proj, "StatusDate", None)),
+        "start":           _fmt_date(proj.ProjectStart),
+        "finish":          _fmt_date(proj.ProjectFinish),
+        "status_date":     _fmt_date(getattr(proj, "StatusDate", None)),
         "calendar":        str(proj.Calendar) if proj.Calendar else "",
         "tasks_total":     task_count,
         "summary_tasks":   summary_count,

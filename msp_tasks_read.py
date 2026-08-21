@@ -234,7 +234,6 @@ def get_wbs_structure(max_level: int = 0) -> str:
     app  = get_app()
     proj = get_proj(app)
     mpd = _get_mpd(proj)
-    mpd  = _get_mpd(proj)
 
     # Build flat list first
     flat = []

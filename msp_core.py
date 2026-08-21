@@ -43,11 +43,54 @@ TIMESCALE_MAP = {"daily": 3, "weekly": 4, "monthly": 5}
 # COM helpers
 # ---------------------------------------------------------------------------
 
+
+# COM errors that mean "busy, ask again" rather than "broken".
+#
+#   RPC_E_CALL_REJECTED      0x80010001  the app refused the call
+#   RPC_E_SERVERCALL_RETRYLATER 0x8001010A  the app asked us to wait
+#
+# Microsoft Project raises these while it is busy -- recalculating, showing a
+# modal dialog, or still settling after a large operation. They are transient
+# and unrelated to whether the application is reachable, but they surface as a
+# raw Windows-language exception with no context, on a project that is open and
+# working.
+_COM_BUSY = (-2147418111, -2147417846)
+
+
+def _com_retry(chamada, tentativas=4, espera=0.4):
+    """Run a COM call, retrying while the application says it is busy.
+
+    Backs off geometrically: 0.4s, 0.8s, 1.6s -- about 2.8s total before giving
+    up. Long enough to outlast a recalculation, short enough that a genuinely
+    unreachable application still fails quickly.
+
+    Only busy errors are retried. Anything else propagates immediately, because
+    repeating a call that failed for a real reason just delays the report.
+    """
+    import time
+    ultima = None
+    for tentativa in range(tentativas):
+        try:
+            return chamada()
+        except Exception as exc:
+            codigo = getattr(exc, "hresult", None)
+            if codigo is None:
+                args = getattr(exc, "args", ())
+                codigo = args[0] if args and isinstance(args[0], int) else None
+            if codigo not in _COM_BUSY:
+                raise
+            ultima = exc
+            if tentativa < tentativas - 1:
+                time.sleep(espera * (2 ** tentativa))
+    raise ultima
+
+
 def get_app(require_project=True):
     """Get the running MS Project instance. Raises if it cannot be reached."""
     import win32com.client
     try:
-        app = win32com.client.GetActiveObject("MSProject.Application")
+        app = _com_retry(
+            lambda: win32com.client.GetActiveObject("MSProject.Application"))
     except Exception as exc:
         # "Not running" is the most likely cause but not the only one, and
         # reporting it as fact sends people to check something already true.
@@ -72,7 +115,9 @@ def get_app(require_project=True):
             "Windows logon session as MS Project, which rules out starting it "
             "over SSH."
         )
-    if require_project and app.Projects.Count == 0:
+    # A busy application usually rejects the first real call rather than the
+    # attach, so this count doubles as the responsiveness check.
+    if require_project and _com_retry(lambda: app.Projects.Count) == 0:
         raise RuntimeError(
             "No project file is open in MS Project. Please open a file first."
         )

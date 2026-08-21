@@ -14,6 +14,7 @@ effect.
 import json
 
 from msp_core import (
+    _com_retry,
     mcp,
     get_app,
     get_proj,
@@ -510,22 +511,38 @@ def health_check() -> str:
     """
     import win32com.client
     try:
-        app = win32com.client.GetActiveObject("MSProject.Application")
+        app = _com_retry(
+            lambda: win32com.client.GetActiveObject("MSProject.Application"))
     except Exception:
         return json.dumps({"status": "disconnected", "error": "MS Project is not running."})
 
-    result = {
-        "status":  "connected",
-        "version": str(app.Version),
-    }
+    # Everything past the attach goes through _com_retry as well. A busy
+    # application accepts the attach and then rejects the first property read,
+    # which is exactly how this tool failed with RPC_E_CALL_REJECTED on a
+    # project that was open and reachable.
+    try:
+        result = {
+            "status":  "connected",
+            "version": str(_com_retry(lambda: app.Version)),
+        }
 
-    if app.Projects.Count > 0:
-        proj = app.ActiveProject
-        result["project_open"] = True
-        result["project_name"] = proj.Name
-        result["task_count"]   = proj.Tasks.Count
-    else:
-        result["project_open"] = False
+        if _com_retry(lambda: app.Projects.Count) > 0:
+            proj = app.ActiveProject
+            result["project_open"] = True
+            result["project_name"] = _com_retry(lambda: proj.Name)
+            result["task_count"]   = _com_retry(lambda: proj.Tasks.Count)
+        else:
+            result["project_open"] = False
+    except Exception as exc:
+        # Reached the application, could not talk to it. Say which, rather than
+        # letting a Windows-language COM code reach the client bare.
+        return json.dumps({
+            "status": "busy",
+            "error": "MS Project answered but refused the call: %s" % str(exc)[:160],
+            "hint": "It is usually recalculating or showing a dialog. Retried "
+                    "for about 3 seconds before giving up; try again shortly, "
+                    "and check the application for an open dialog box.",
+        }, indent=2)
 
     return json.dumps(result, indent=2)
 

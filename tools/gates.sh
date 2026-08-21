@@ -20,6 +20,10 @@ python3 tools/snap_tools.py . /tmp/snap_tools_current.json \
     --baseline tools/baseline_tools.json || fail=1
 
 echo
+echo "== Gate 3: dead imports and orphan banners =="
+python3 tools/check_unused.py ./*.py || fail=1
+
+echo
 echo "== compileall =="
 if python3 -m compileall -q ./*.py; then
     echo "OK"

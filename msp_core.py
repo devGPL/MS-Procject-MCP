@@ -22,8 +22,6 @@ pass where production fails. Confirm on Windows before trusting any offline
 suite as proof of COM behaviour.
 """
 
-import json
-import sys
 import datetime
 from mcp.server.fastmcp import FastMCP
 

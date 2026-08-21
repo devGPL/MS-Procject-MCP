@@ -20,6 +20,7 @@ carries it; it must never be sliced apart.
 import json
 
 from msp_core import (
+    _uid_map,
     _find_resource,
     TIMESCALE_MAP,
     mcp,
@@ -256,7 +257,7 @@ def bulk_assign_resources(assignments_json: str) -> str:
 
     app.Calculation = 0
     try:
-        uid_map = {t.UniqueID: t for t in proj.Tasks if t is not None}
+        uid_map = _uid_map(proj)
         # Get existing resource names
         existing_resources = set()
         for r in proj.Resources:

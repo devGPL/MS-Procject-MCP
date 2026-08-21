@@ -237,6 +237,32 @@ def _find_resource(proj, name):
     return None
 
 
+
+def _uid_map(proj):
+    """Snapshot of {UniqueID: task} for the whole project.
+
+    For bulk operations: _find_task rescans proj.Tasks per lookup, so N items
+    against M tasks costs N*M COM traversals. This costs one.
+
+    It is a SNAPSHOT, and that difference is observable. _find_task re-reads
+    the collection on every call, so a task deleted earlier in the same bulk
+    run disappears from later lookups; entries in this map stay, and the stale
+    COM reference fails on use instead of reporting "not found".
+    """
+    try:
+        return {t.UniqueID: t for t in proj.Tasks if t is not None}
+    except Exception:
+        return {}
+
+
+def _uid_to_id_map(proj):
+    """Snapshot of {UniqueID: ID} -- the row numbers used by link syntax."""
+    try:
+        return {t.UniqueID: t.ID for t in proj.Tasks if t is not None}
+    except Exception:
+        return {}
+
+
 def _find_task(proj, unique_id):
     """Find a task by UniqueID. Returns the COM Task object or None."""
     for t in proj.Tasks:

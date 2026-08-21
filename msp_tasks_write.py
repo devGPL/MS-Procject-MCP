@@ -27,6 +27,7 @@ finally. Each pair is wholly inside one function; never slice one apart.
 import json
 
 from msp_core import (
+    _uid_map,
     mcp,
     get_app,
     get_proj,
@@ -141,7 +142,7 @@ def bulk_update_rag(updates: str) -> str:
     app   = get_app()
     proj  = get_proj(app)
 
-    uid_map = {t.UniqueID: t for t in proj.Tasks if t is not None}
+    uid_map = _uid_map(proj)
 
     results = []
     for item in items:
@@ -176,7 +177,7 @@ def bulk_update_tasks(updates_json: str) -> str:
 
     app.Calculation = 0
     try:
-        uid_map = {t.UniqueID: t for t in proj.Tasks if t is not None}
+        uid_map = _uid_map(proj)
         updated = 0
         not_found = []
 
@@ -439,7 +440,7 @@ def bulk_set_task_mode(updates_json: str) -> str:
 
     else:
         items = data if isinstance(data, list) else [data]
-        uid_map = {t.UniqueID: t for t in proj.Tasks if t is not None}
+        uid_map = _uid_map(proj)
         for item in items:
             uid = item["unique_id"]
             t = uid_map.get(uid)
@@ -641,12 +642,15 @@ def dry_run_bulk_update(updates_json: str) -> str:
     not_found = []
     no_change = []
 
+    # One traversal for the whole batch instead of one per item.
+    uid_map = _uid_map(proj)
+
     for item in items:
         uid = item.get("unique_id")
         if uid is None:
             continue
 
-        t = _find_task(proj, uid)
+        t = uid_map.get(uid)
         if t is None:
             not_found.append(uid)
             continue
@@ -840,11 +844,14 @@ def bulk_set_deadlines(deadlines_json: str) -> str:
     not_found = []
     errors = []
 
+    # One traversal for the whole batch instead of one per item.
+    uid_map = _uid_map(proj)
+
     for item in items:
         uid = item["unique_id"]
         dd  = item["deadline_date"]
 
-        t = _find_task(proj, uid)
+        t = uid_map.get(uid)
         if t is None:
             not_found.append(uid)
             continue

@@ -13,6 +13,8 @@ result.
 import json
 
 from msp_core import (
+    _uid_map,
+    _uid_to_id_map,
     mcp,
     get_app,
     get_proj,
@@ -41,7 +43,7 @@ def add_predecessor(
     app  = get_app()
     proj = get_proj(app)
 
-    uid_to_id = {t.UniqueID: t.ID for t in proj.Tasks if t is not None}
+    uid_to_id = _uid_to_id_map(proj)
 
     if successor_unique_id not in uid_to_id:
         return json.dumps({"error": f"Successor UniqueID {successor_unique_id} not found."})
@@ -93,8 +95,8 @@ def bulk_add_predecessors(links_json: str) -> str:
     app   = get_app()
     proj  = get_proj(app)
 
-    uid_to_id = {t.UniqueID: t.ID for t in proj.Tasks if t is not None}
-    uid_to_task = {t.UniqueID: t for t in proj.Tasks if t is not None}
+    uid_to_id = _uid_to_id_map(proj)
+    uid_to_task = _uid_map(proj)
 
     linked = 0
     errors = []
@@ -147,7 +149,7 @@ def remove_predecessor(
     app  = get_app()
     proj = get_proj(app)
 
-    uid_to_id = {t.UniqueID: t.ID for t in proj.Tasks if t is not None}
+    uid_to_id = _uid_to_id_map(proj)
 
     if successor_unique_id not in uid_to_id:
         return json.dumps({"error": f"Successor UniqueID {successor_unique_id} not found."})

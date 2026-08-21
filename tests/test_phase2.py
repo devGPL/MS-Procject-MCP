@@ -1,18 +1,16 @@
 """Integration test for Phase 2 MCP server tools (10 new features)."""
 import asyncio
 import json
-import importlib.util
 import os
+import sys
 
-_server_path = os.path.join(os.path.dirname(__file__), "..", "server.py")
-spec = importlib.util.spec_from_file_location("server", _server_path)
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from server import mcp
 
 
 async def call(name, args=None):
     """Call an MCP tool and return parsed JSON or raw text."""
-    r = await mod.mcp.call_tool(name, args or {})
+    r = await mcp.call_tool(name, args or {})
     if isinstance(r, tuple):
         r = r[0]
     if isinstance(r, list):
@@ -273,6 +271,8 @@ async def test():
     except Exception:
         pass
 
+    return failed == 0
+
 
 if __name__ == "__main__":
-    asyncio.run(test())
+    sys.exit(0 if asyncio.run(test()) else 1)

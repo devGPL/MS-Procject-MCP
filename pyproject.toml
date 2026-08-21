@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "msproject-mcp"
+version = "0.7.0"
+description = "Control Microsoft Project via COM automation through the Model Context Protocol"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+    # Capped below 1.20 deliberately, and the cap is load-bearing.
+    #
+    # mcp 1.20 added `pyjwt[crypto]`, which pulls `cryptography`. cryptography
+    # published win_arm64 wheels up to 46.0.3 and stopped; 50.0.0 ships
+    # win_amd64 only. On Windows on ARM pip therefore tries to build it from
+    # source and fails on the missing MSVC linker, so `pip install` needs Rust
+    # plus Visual Studio Build Tools on ARM and nothing on x64 -- two different
+    # setups for the same project.
+    #
+    # This server never authenticates anything, so PyJWT is dead weight here.
+    # Capping below 1.20 drops that whole subtree and makes the install
+    # identical on both architectures, with no compiler on either.
+    #
+    # The floor is also deliberate: every suite carries defensive code for two
+    # call_tool return shapes, the fingerprint of an earlier breaking change.
+    #
+    # Verified: 1.19 registers the same 99 tools with a byte-identical schema
+    # snapshot to 1.29, and supports the streamable-http transport this server
+    # needs for the VM setup.
+    "mcp>=1.16,<1.20",
+    # Windows-only, and the whole server is: COM automation does not exist
+    # elsewhere. The marker keeps `pip install` from failing on macOS/Linux,
+    # where the modules still import and the gates in tools/ still run.
+    "pywin32>=306; sys_platform == 'win32'",
+    # Required by add_recurring_task. Was documented in prose only.
+    "python-dateutil>=2.8",
+]
+
+[project.scripts]
+msproject-mcp = "server:main"
+
+[project.urls]
+Repository = "https://github.com/devGPL/MS-Procject-MCP"
+
+[tool.setuptools]
+# Flat modules, not a package: server.py imports its nine siblings directly.
+py-modules = [
+    "server",
+    "msp_core",
+    "msp_projects",
+    "msp_tasks_read",
+    "msp_tasks_write",
+    "msp_dependencies",
+    "msp_resources",
+    "msp_calendars",
+    "msp_schedule",
+    "msp_baselines_costs",
+    "msp_customfields",
+]

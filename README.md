@@ -13,6 +13,7 @@ Controla o Microsoft Project via automação COM através do Model Context Proto
 | SO | **Windows** (a automação COM não existe em macOS/Linux) |
 | Microsoft Project | Instalado e **em execução** (testado no MS Project 16.0) |
 | Python | 3.10 ou superior |
+| Arquitetura | x64 e ARM64, sem diferença de instalação — nenhuma dependência precisa de compilador |
 
 ```bash
 pip install mcp pywin32 python-dateutil
@@ -24,23 +25,25 @@ pip install mcp pywin32 python-dateutil
 
 ## Instalação
 
-1. Clone o repositório e anote o caminho absoluto de `server.py`.
-
 ```bash
-git clone <url-do-repo>
+git clone https://github.com/devGPL/MS-Procject-MCP
 cd MS-Procject-MCP
-pip install mcp pywin32 python-dateutil
+pip install -e .
 ```
 
-2. Teste que o servidor sobe:
+Isso instala as dependências declaradas (`mcp`, `pywin32` no Windows, `python-dateutil`) e cria o comando `msproject-mcp`. Teste que ele sobe:
 
 ```bash
-python server.py
+msproject-mcp
 ```
 
-3. Configure o cliente (Claude ou Codex) — instruções abaixo.
+Ele fica aguardando no stdin — é o transporte do MCP. `Ctrl+C` encerra. Se aparecerem as duas linhas de diagnóstico em stderr, está funcionando.
+
+`python server.py` continua funcionando de forma idêntica, caso prefira não instalar.
 
 > **Antes de usar qualquer ferramenta**: o MS Project precisa estar aberto com um arquivo carregado. O servidor se conecta a uma instância já em execução; ele não abre o Project sozinho.
+
+> **Por que `pip install -e .` e não `pip install mcp pywin32`**: o erro mais comum de configuração é instalar as dependências num interpretador e apontar o cliente MCP para outro. Com o pacote instalado, o `msproject-mcp` que o cliente executa é o do ambiente que tem as bibliotecas — e some o caminho absoluto do JSON de configuração.
 
 ---
 
@@ -57,8 +60,8 @@ Edite `claude_desktop_config.json`:
 {
   "mcpServers": {
     "msproject": {
-      "command": "python",
-      "args": ["C:\\caminho\\para\\MS-Procject-MCP\\server.py"]
+      "command": "msproject-mcp",
+      "args": []
     }
   }
 }
@@ -71,7 +74,7 @@ Reinicie o Claude Desktop. O servidor aparece no ícone de ferramentas (🔨) do
 Via CLI (recomendado — grava a config pra você):
 
 ```bash
-claude mcp add msproject --scope user -- python C:\caminho\para\MS-Procject-MCP\server.py
+claude mcp add msproject --scope user -- msproject-mcp
 ```
 
 Escopos disponíveis:
@@ -94,8 +97,8 @@ Alternativa manual — crie `.mcp.json` na raiz do projeto:
 {
   "mcpServers": {
     "msproject": {
-      "command": "python",
-      "args": ["C:\\caminho\\para\\MS-Procject-MCP\\server.py"]
+      "command": "msproject-mcp",
+      "args": []
     }
   }
 }
@@ -108,7 +111,7 @@ Alternativa manual — crie `.mcp.json` na raiz do projeto:
 ### Via CLI
 
 ```bash
-codex mcp add msproject -- python C:\caminho\para\MS-Procject-MCP\server.py
+codex mcp add msproject -- msproject-mcp
 ```
 
 Conferir:
@@ -123,13 +126,13 @@ Edite `~/.codex/config.toml` (no Windows: `%USERPROFILE%\.codex\config.toml`):
 
 ```toml
 [mcp_servers.msproject]
-command = "python"
-args = ["C:\\caminho\\para\\MS-Procject-MCP\\server.py"]
+command = "msproject-mcp"
+args = []
 ```
 
-> **Barras invertidas no TOML**: escape com `\\` (como acima) ou use string literal com aspas simples: `args = ['C:\caminho\para\server.py']`.
+> **`msproject-mcp` não encontrado**: o comando fica no diretório `Scripts` (Windows) ou `bin` do ambiente onde você rodou `pip install -e .`. Se esse diretório não está no `PATH` do cliente, use o caminho absoluto do executável em `command`, ou instale dentro de um venv e aponte para o `msproject-mcp` dele.
 
-Se o Python não estiver no `PATH`, aponte o executável completo:
+Sem instalar o pacote, aponte para o `server.py` diretamente — aqui as barras invertidas precisam de escape `\\`, ou use string literal com aspas simples:
 
 ```toml
 [mcp_servers.msproject]
@@ -139,83 +142,132 @@ args = ["C:\\caminho\\para\\MS-Procject-MCP\\server.py"]
 
 ---
 
+## MS Project numa VM (Parallels, VMware, Hyper-V)
+
+Se o Claude roda no macOS e o MS Project numa VM Windows, **não** dá para usar o padrão de SSH que funciona com outros MCPs.
+
+O motivo é específico deste servidor. `GetActiveObject` lê a *Running Object Table* do Windows, que é **por sessão de logon**. Um login SSH cai na sessão 0; o MS Project aberto na área de trabalho está na sessão 1. Da sessão 0 ele é invisível, e a tentativa falha com `MK_E_UNAVAILABLE (0x800401E3)` mesmo com o programa aberto.
+
+Servidores que conversam por porta TCP com o aplicativo alvo atravessam sessão sem problema — este precisa anexar via COM, e COM não atravessa.
+
+A solução é inverter o que cruza a fronteira: em vez do COM atravessar a sessão, o **HTTP atravessa a máquina**.
+
+### Na VM Windows
+
+Instale e rode **a partir da área de trabalho** — um terminal aberto na VM, um atalho, ou a pasta Inicializar. Nunca por SSH, e **nunca como administrador**:
+
+```bash
+msproject-mcp --transport streamable-http --host 0.0.0.0 --port 8765
+```
+
+Libere a porta no firewall, uma vez só (PowerShell como administrador):
+
+```powershell
+New-NetFirewallRule -DisplayName "MS Project MCP" -Direction Inbound -LocalPort 8765 -Protocol TCP -Action Allow
+```
+
+### Subir junto com o Windows
+
+Para não depender de abrir um terminal a cada login, crie `C:\msproject-mcp\start-server.cmd`:
+
+```bat
+@echo off
+title MS Project MCP Server
+set LOG=%LOCALAPPDATA%\msproject-mcp.log
+echo ===== iniciado em %DATE% %TIME% ===== >> "%LOG%"
+"%LOCALAPPDATA%\Programs\Python\Python312-arm64\Scripts\msproject-mcp.exe" --transport streamable-http --host 0.0.0.0 --port 8765 >> "%LOG%" 2>&1
+echo ===== encerrado em %DATE% %TIME% (codigo %ERRORLEVEL%) ===== >> "%LOG%"
+```
+
+E um `.vbs` na pasta Inicializar (`Win+R` → `shell:startup`) para lançá-lo minimizado:
+
+```vbs
+CreateObject("WScript.Shell").Run """C:\msproject-mcp\start-server.cmd""", 7, False
+```
+
+A pasta Inicializar roda na sessão interativa e sem elevação, que é exatamente o que o COM exige. Um Agendador de Tarefas configurado com "executar com privilégios mais altos" **quebraria** por causa do nível de integridade.
+
+O log em `%LOCALAPPDATA%\msproject-mcp.log` é onde procurar quando o servidor não sobe — a janela minimizada some sem deixar rastro se o processo morrer.
+
+### No Mac
+
+```bash
+claude mcp add --transport http msproject http://10.211.55.5:8765/mcp
+```
+
+Troque o IP pelo da sua VM (`ipconfig` no Windows). No Claude Desktop, use `"url": "http://10.211.55.5:8765/mcp"` em vez de `command`/`args`.
+
+> **Não eleve o terminal.** A Running Object Table também é separada por nível de integridade: um servidor iniciado como administrador roda em *High* e não enxerga o MS Project aberto normalmente, em *Medium*. Mesma máquina, mesma sessão, mesmo usuário — e o erro é idêntico ao de "não está rodando". A regra de firewall precisa de admin uma única vez; o servidor, nunca.
+
+> **Segurança**: `--host 0.0.0.0` aceita conexões de qualquer interface e o servidor não tem autenticação própria. Use apenas em rede host-only do Parallels/VMware. Numa rede compartilhada com terceiros, qualquer um que alcance a porta controla o seu MS Project.
+
+---
+
 ## Verificando a conexão
 
 Peça ao assistente para rodar `health_check`. A resposta traz a versão do MS Project e o status do arquivo aberto. Se falhar:
 
 | Erro | Causa | Solução |
 |------|-------|---------|
+| `Could not attach to MS Project` com o MS Project claramente aberto | Servidor iniciado como administrador. A Running Object Table é filtrada por nível de integridade: um processo *High* não enxerga um *Medium* | Suba o servidor num PowerShell **normal**. Rodar como admin piora, não ajuda |
 | `MS Project is not running` | Nenhuma instância ativa | Abra o MS Project |
 | `No project file is open` | Project aberto sem arquivo | Abra ou crie um `.mpp` |
 | Servidor não aparece no cliente | Caminho errado ou JSON/TOML inválido | Confira o caminho absoluto e reinicie o cliente |
 | `ModuleNotFoundError: win32com` | `pywin32` ausente no Python usado | Instale no mesmo interpretador que está no `command` |
+| `Failed building wheel for cryptography` / `linker link.exe not found` | Versão do `mcp` fora do teto declarado, puxando `cryptography`, que não tem wheel para Windows ARM | `pip install -e .` a partir deste repositório — o teto `mcp<1.20` evita a dependência |
 
 ---
 
-## Ferramentas (99)
+## Ferramentas
 
-### Projeto (7)
-`open_project` · `new_project` · `get_project_info` · `set_project_properties` · `save_project` · `save_project_as` · `close_project`
+Organizadas por módulo. Cada arquivo carrega no seu cabeçalho a regra de fronteira que decide o que entra nele.
 
-### Consulta de tarefas (9)
-`get_tasks` · `get_task` · `get_critical_path` · `get_tasks_by_rag` · `get_overdue_tasks` · `get_tasks_by_resource` · `search_tasks` · `get_progress_summary` · `get_wbs_structure`
+### Projeto, multiprojeto e intercâmbio (17)
+`msp_projects.py` — ciclo de vida do arquivo .mpp, navegação entre projetos abertos, import/export e a sonda de conectividade
 
-### Edição de tarefas (12)
-`update_task` · `bulk_update_rag` · `bulk_update_tasks` · `add_task` · `bulk_add_tasks` · `add_recurring_task` · `delete_task` · `set_task_mode` · `bulk_set_task_mode` · `set_constraint` · `clear_estimated_flags` · `indent_task`
+`open_project` · `new_project` · `get_project_info` · `set_project_properties` · `save_project` · `save_project_as` · `close_project` · `import_xml` · `export_xml` · `list_projects` · `switch_project` · `cross_project_link` · `undo_last` · `insert_subproject` · `snapshot_to_json` · `health_check` · `snapshot_diff`
 
-### Dependências (4)
-`add_predecessor` · `bulk_add_predecessors` · `remove_predecessor` · `get_task_dependencies`
+### Leitura de tarefas (17)
+`msp_tasks_read.py` — consultas, filtros, agregações e exportações — nada aqui escreve no projeto
 
-### Recursos (7)
-`get_resources` · `add_resource` · `assign_resource` · `update_resource` · `delete_resource` · `set_resource_calendar` · `get_resource_availability`
+`get_tasks` · `get_task` · `get_tasks_by_rag` · `get_overdue_tasks` · `get_tasks_by_resource` · `search_tasks` · `get_progress_summary` · `get_wbs_structure` · `filter_tasks` · `group_tasks_by` · `get_milestone_report` · `get_progress_by_wbs` · `export_csv` · `apply_filter` · `get_constraints` · `get_actual_work` · `get_timephased_data`
 
-### Alocação de recursos (3)
-`bulk_assign_resources` · `remove_resource_assignment` · `get_resource_workload`
+### Escrita de tarefas (19)
+`msp_tasks_write.py` — criação, atualização, exclusão, modo de agendamento e edições em lote
 
-### Tabelas de custo (2)
-`get_resource_rate_tables` · `set_resource_rate_table`
+`update_task` · `bulk_update_rag` · `bulk_update_tasks` · `add_task` · `bulk_add_tasks` · `delete_task` · `set_task_mode` · `bulk_set_task_mode` · `set_constraint` · `clear_estimated_flags` · `indent_task` · `set_deadline` · `set_task_active` · `dry_run_bulk_update` · `move_task` · `copy_task_structure` · `bulk_set_deadlines` · `set_task_hyperlink` · `add_recurring_task`
+
+### Dependências (5)
+`msp_dependencies.py` — a rede de precedência entre tarefas
+
+`add_predecessor` · `bulk_add_predecessors` · `remove_predecessor` · `get_task_dependencies` · `get_dependency_chain`
+
+### Recursos (11)
+`msp_resources.py` — pool, alocações, disponibilidade e tabelas de custo
+
+`get_resources` · `add_resource` · `assign_resource` · `get_resource_workload` · `bulk_assign_resources` · `remove_resource_assignment` · `update_resource` · `delete_resource` · `get_resource_availability` · `get_resource_rate_tables` · `set_resource_rate_table`
+
+### Calendários (10)
+`msp_calendars.py` — calendários base, exceções e horas de trabalho
+
+`get_calendars` · `set_calendar_exception` · `set_project_calendar` · `set_task_calendar` · `create_calendar` · `list_calendar_exceptions` · `delete_calendar` · `delete_calendar_exception` · `set_resource_calendar` · `set_working_hours`
+
+### Cronograma (11)
+`msp_schedule.py` — o que é calculado sobre a rede de tarefas: caminho crítico, folga, nivelamento, avanço de status
+
+`get_critical_path` · `get_schedule_analysis` · `validate_schedule` · `level_resources` · `find_available_slack` · `calculate_project` · `update_project` · `reschedule_incomplete_work` · `get_critical_path_sequence` · `get_critical_tasks_for_period` · `what_if_delay`
+
+### Linha de base e custo (6)
+`msp_baselines_costs.py` — planejado versus realizado: baselines, valor agregado, custo e variação
+
+`save_baseline` · `clear_baseline` · `get_earned_value` · `compare_baselines` · `get_cost_summary` · `get_variance_report`
 
 ### Campos personalizados (3)
+`msp_customfields.py` — os slots Text/Number/Date/Flag/Duration
+
 `rename_custom_fields` · `update_custom_fields` · `get_custom_field_values`
 
-### Importação / exportação (6)
-`import_xml` · `export_xml` · `export_csv` · `snapshot_to_json` · `snapshot_diff` · `insert_subproject`
-
-### Calendários (8)
-`get_calendars` · `create_calendar` · `delete_calendar` · `set_calendar_exception` · `delete_calendar_exception` · `list_calendar_exceptions` · `set_project_calendar` · `set_working_hours`
-
-### Cronograma e análise (12)
-`get_schedule_analysis` · `validate_schedule` · `calculate_project` · `get_milestone_report` · `level_resources` · `find_available_slack` · `get_constraints` · `set_task_calendar` · `set_task_hyperlink` · `get_critical_path_sequence` · `get_critical_tasks_for_period` · `what_if_delay`
-
-### Atualização de progresso (2)
-`update_project` — marca tudo concluído até uma data (ritual semanal do PMO) · `reschedule_incomplete_work`
-
-### Dados timephased (1)
-`get_timephased_data` — dados período a período de trabalho/custo (curva S, fluxo de caixa)
-
-### Linhas de base e valor agregado (4)
-`save_baseline` · `clear_baseline` · `compare_baselines` · `get_earned_value` (BCWS, BCWP, ACWP, SPI, CPI)
-
-### Variação e relatórios (1)
-`get_variance_report`
-
-### Custo e trabalho (2)
-`get_cost_summary` · `get_actual_work`
-
-### Acompanhamento (2)
-`get_progress_by_wbs` · `get_dependency_chain`
-
-### Operações avançadas (8)
-`set_deadline` · `bulk_set_deadlines` · `set_task_active` · `dry_run_bulk_update` · `move_task` · `copy_task_structure` · `cross_project_link` · `undo_last`
-
-### Multiprojeto (3)
-`list_projects` · `switch_project` · `apply_filter`
-
-### Filtro e agrupamento (2)
-`filter_tasks` · `group_tasks_by`
-
-### Conectividade (1)
-`health_check`
+**99 ferramentas** em 9 módulos.
 
 ---
 
@@ -251,33 +303,70 @@ Toda consulta (`get_task`, `get_tasks`, etc.) devolve 35+ campos por tarefa, ent
 ## Testes
 
 ```bash
-python tests/test_new_tools.py  # 11 testes (CRUD básico)
-python tests/test_phase2.py     # 10 testes (recursos, baselines, WBS)
-python tests/test_phase3.py     # 15 testes (campos personalizados, calendários, cronograma)
-python tests/test_phase4.py     # 23 testes (operações avançadas, multiprojeto, filtros)
-python tests/test_phase5.py     # 11 testes (correções, custo/trabalho)
-python tests/test_phase6.py     # 75 testes (timephased, calendários, variação)
-python tests/test_phase7.py     # 57 testes (caminho crítico, what-if)
+python tests/test_new_tools.py  # 11 verificações (CRUD básico)
+python tests/test_phase2.py     # 10 verificações (recursos, baselines, WBS)
+python tests/test_phase3.py     # 15 verificações (campos personalizados, calendários, cronograma)
+python tests/test_phase4.py     # 25 verificações (operações avançadas, multiprojeto, filtros)
+python tests/test_phase5.py     # 11 verificações (correções, custo/trabalho)
+python tests/test_phase6.py     # 63 verificações (timephased, calendários, variação)
+python tests/test_phase7.py     # 45 verificações (caminho crítico, what-if)
 ```
 
-**202 testes** em 7 suítes. Todas exigem o MS Project em execução — elas criam e fecham projetos temporários.
+**180 verificações** em 7 suítes. Não são funções `pytest` — cada suíte é um script sequencial com asserts inline. Todas exigem o MS Project em execução: elas criam e fecham projetos temporários.
+
+Antes de qualquer commit, rode os portões — eles não precisam de Windows nem do MS Project:
+
+```bash
+./tools/gates.sh
+```
+
+| Portão | O que verifica |
+|---|---|
+| `check_names.py` | nome carregado sem nada que o defina — pega helper esquecido num import |
+| `snap_tools.py` | as 99 ferramentas ainda registradas, comparando por nome contra um baseline |
+| `check_unused.py` | import morto e banner de seção sem código embaixo |
+
+O registro de ferramentas é comparado contra `tools/baseline_tools.json`. Se você adicionar ou remover uma ferramenta de propósito, regere-o:
+
+```bash
+python3 tools/snap_tools.py . tools/baseline_tools.json
+```
 
 ---
 
 ## Arquitetura
 
-Servidor em arquivo único (`server.py`, ~5.200 linhas) sobre o framework FastMCP. Todas as chamadas COM passam pelos helpers `get_app()` / `get_proj()`. Datas são normalizadas com `_to_naive()` e formatadas com `_fmt_date()`.
+Dez módulos sobre o framework FastMCP. `server.py` não registra ferramenta alguma: importa os nove módulos que registram e roda o servidor.
 
-### Evolução por fase
+| Módulo | Ferramentas | Linhas |
+|---|---|---|
+| `server.py` | — | 55 |
+| `msp_core.py` | — | 300 |
+| `msp_projects.py` | 17 | 583 |
+| `msp_tasks_read.py` | 17 | 817 |
+| `msp_tasks_write.py` | 19 | 999 |
+| `msp_dependencies.py` | 5 | 296 |
+| `msp_resources.py` | 11 | 591 |
+| `msp_calendars.py` | 10 | 476 |
+| `msp_schedule.py` | 11 | 786 |
+| `msp_baselines_costs.py` | 6 | 389 |
+| `msp_customfields.py` | 3 | 164 |
 
-| Fase | Ferramentas | Foco |
-|------|-------------|------|
-| 1–2 | 25 | CRUD básico, dependências, recursos |
-| 3 | 44 | Campos personalizados, calendários, análise de cronograma |
-| 4 | 65 | Operações avançadas, multiprojeto, filtros |
-| 5 | 79 | Correções, controle de custo/trabalho |
-| 6 | 96 | Timephased, gestão de calendários, disponibilidade, variação |
-| 7 | 99 | Inteligência de caminho crítico: sequência ordenada, filtro por período, what-if |
+Total: 5456 linhas.
+
+`msp_core.py` é a fronteira COM — nenhum módulo de ferramenta fala com o Microsoft Project sem passar por ele. Todo `import win32com` está **dentro** de corpo de função, nunca no topo. É por isso que os módulos importam limpo em macOS e Linux sem pywin32, e é o que permite aos portões em `tools/` verificarem o registro de ferramentas sem Windows.
+
+Cada módulo carrega no cabeçalho a regra que decide o que pertence a ele. Alguns casos não são óbvios e estão documentados lá:
+
+- `set_task_calendar` e `set_resource_calendar` moram em `msp_calendars`, não com tarefas ou recursos — o sujeito é o calendário, a tarefa é só o alvo.
+- `export_csv` mora em `msp_tasks_read`, não ao lado de `export_xml`, porque chama `filter_tasks` e essa aresta precisa ficar dentro de um módulo.
+- As tabelas de custo ficam em `msp_resources`, não com relatórios de custo: elas escrevem em `r.CostRateTables`, ou seja, editam o recurso.
+
+### Requer Windows de verdade
+
+Nove ferramentas dirigem a janela do MS Project em vez do modelo de objetos, usando `SelectRow` com `EditCut`/`EditCopy`/`EditPaste` ou `OutlineIndent`/`OutlineOutdent`. Elas dependem de estado de seleção dentro do aplicativo, que nenhum fake reproduz — um teste offline passaria sem fazer nada:
+
+`add_recurring_task` · `copy_task_structure` · `delete_task` · `indent_task` · `move_task` · `undo_last` · `insert_subproject` · `apply_filter` · `set_project_calendar`
 
 ---
 

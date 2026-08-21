@@ -75,9 +75,12 @@ def _parse_date(s):
     return datetime.datetime.strptime(s, "%Y-%m-%d")
 
 
-def task_to_dict(t, proj):
-    """Convert a COM Task object to a plain dict."""
-    mpd = _get_mpd(proj)
+def task_to_dict(t, mpd):
+    """Convert a COM Task object to a plain dict.
+
+    Takes MinutesPerDay rather than the project: reading it here meant one COM
+    round trip per task in every listing.
+    """
 
     def fmt(dt):
         try:
@@ -87,12 +90,22 @@ def task_to_dict(t, proj):
         except Exception:
             return None
 
-    # Safe reads for fields that may not be available on all task types
-    def safe(prop, default=None):
+    def safe(read, default=None):
+        """Read a COM property defensively.
+
+        `read` must be a callable. Passing the property itself evaluates it in
+        the caller's frame, before this function runs, so the except clause
+        never sees the failure and `default` is never applied.
+
+        A None result is treated like a failed read: COM returns None for
+        properties that do not apply to a task type, and callers divide by
+        these values.
+        """
         try:
-            return prop
+            value = read()
         except Exception:
             return default
+        return default if value is None else value
 
     return {
         "unique_id":              t.UniqueID,
@@ -106,17 +119,17 @@ def task_to_dict(t, proj):
         "finish":                 fmt(t.Finish),
         "duration_days":          round(t.Duration / mpd, 2) if t.Duration else 0,
         "percent_complete":       t.PercentComplete,
-        "actual_start":           fmt(safe(t.ActualStart)),
-        "actual_finish":          fmt(safe(t.ActualFinish)),
-        "remaining_duration_days": round(safe(t.RemainingDuration, 0) / mpd, 2),
-        "total_slack_days":       round(safe(t.TotalSlack, 0) / mpd, 2),
-        "free_slack_days":        round(safe(t.FreeSlack, 0) / mpd, 2),
-        "deadline":               fmt(safe(t.Deadline)),
-        "priority":               safe(t.Priority, 500),
-        "constraint_type":        CONSTRAINT_NAMES.get(safe(t.ConstraintType, 0), "ASAP"),
-        "constraint_date":        fmt(safe(t.ConstraintDate)),
-        "manual":                 bool(safe(t.Manual, False)),
-        "type":                   TASK_TYPE_NAMES.get(safe(t.Type, 0), "FixedUnits"),
+        "actual_start":           fmt(safe(lambda: t.ActualStart)),
+        "actual_finish":          fmt(safe(lambda: t.ActualFinish)),
+        "remaining_duration_days": round(safe(lambda: t.RemainingDuration, 0) / mpd, 2),
+        "total_slack_days":       round(safe(lambda: t.TotalSlack, 0) / mpd, 2),
+        "free_slack_days":        round(safe(lambda: t.FreeSlack, 0) / mpd, 2),
+        "deadline":               fmt(safe(lambda: t.Deadline)),
+        "priority":               safe(lambda: t.Priority, 500),
+        "constraint_type":        CONSTRAINT_NAMES.get(safe(lambda: t.ConstraintType, 0), "ASAP"),
+        "constraint_date":        fmt(safe(lambda: t.ConstraintDate)),
+        "manual":                 bool(safe(lambda: t.Manual, False)),
+        "type":                   TASK_TYPE_NAMES.get(safe(lambda: t.Type, 0), "FixedUnits"),
         "predecessors":           t.Predecessors,
         "resource_names":         t.ResourceNames,
         "notes":                  t.Notes,
@@ -128,8 +141,8 @@ def task_to_dict(t, proj):
         "text3":                  t.Text3 or "",
         "flag1":                  bool(t.Flag1),
         "flag2":                  bool(t.Flag2),
-        "hyperlink":              safe(t.HyperlinkAddress, "") or "",
-        "hyperlink_text":         safe(t.Hyperlink, "") or "",
+        "hyperlink":              safe(lambda: t.HyperlinkAddress, "") or "",
+        "hyperlink_text":         safe(lambda: t.Hyperlink, "") or "",
     }
 
 

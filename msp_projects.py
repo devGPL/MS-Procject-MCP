@@ -88,6 +88,7 @@ def get_project_info() -> str:
     """Get summary information about the currently active project."""
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
     mpd  = _get_mpd(proj)
 
     def fmt(dt):
@@ -454,11 +455,12 @@ def snapshot_to_json(output_path: str, include_resources: bool = True) -> str:
     """
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
 
     tasks = []
     for t in proj.Tasks:
         if t is not None:
-            tasks.append(task_to_dict(t, proj))
+            tasks.append(task_to_dict(t, mpd))
 
     resources = []
     if include_resources:

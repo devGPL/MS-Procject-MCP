@@ -53,6 +53,7 @@ def get_tasks(
     """
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
 
     results = []
     for t in proj.Tasks:
@@ -64,7 +65,7 @@ def get_tasks(
             continue
         if keyword and keyword.lower() not in t.Name.lower():
             continue
-        results.append(task_to_dict(t, proj))
+        results.append(task_to_dict(t, mpd))
 
     return json.dumps({"count": len(results), "tasks": results}, indent=2)
 
@@ -74,10 +75,11 @@ def get_task(unique_id: int) -> str:
     """Get full details for a single task by its UniqueID."""
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
 
     for t in proj.Tasks:
         if t is not None and t.UniqueID == unique_id:
-            return json.dumps(task_to_dict(t, proj), indent=2)
+            return json.dumps(task_to_dict(t, mpd), indent=2)
 
     return json.dumps({"error": f"Task UniqueID {unique_id} not found."})
 
@@ -90,12 +92,13 @@ def get_tasks_by_rag(rag: str = "Red") -> str:
     """
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
 
     results = []
     for t in proj.Tasks:
         if t is not None and not t.Summary:
             if (t.Text1 or "").strip().lower() == rag.strip().lower():
-                results.append(task_to_dict(t, proj))
+                results.append(task_to_dict(t, mpd))
 
     return json.dumps({"rag": rag, "count": len(results), "tasks": results}, indent=2)
 
@@ -107,6 +110,7 @@ def get_overdue_tasks() -> str:
     today = datetime.datetime.now()
     app   = get_app()
     proj  = get_proj(app)
+    mpd  = _get_mpd(proj)
 
     results = []
     for t in proj.Tasks:
@@ -117,7 +121,7 @@ def get_overdue_tasks() -> str:
         try:
             finish = _to_naive(t.Finish)
             if finish and finish < today:
-                results.append(task_to_dict(t, proj))
+                results.append(task_to_dict(t, mpd))
         except Exception:
             continue
 
@@ -129,13 +133,14 @@ def get_tasks_by_resource(resource_name: str) -> str:
     """Return all tasks assigned to a named resource (case-insensitive substring match)."""
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
 
     results = []
     name_lower = resource_name.lower()
     for t in proj.Tasks:
         if t is not None and not t.Summary:
             if name_lower in (t.ResourceNames or "").lower():
-                results.append(task_to_dict(t, proj))
+                results.append(task_to_dict(t, mpd))
 
     return json.dumps({
         "resource": resource_name,
@@ -226,6 +231,7 @@ def get_wbs_structure(max_level: int = 0) -> str:
     """
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
     mpd  = _get_mpd(proj)
 
     def fmt(dt):
@@ -288,6 +294,7 @@ def filter_tasks(filters_json: str) -> str:
     f = json.loads(filters_json)
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
 
     predicates = []
 
@@ -355,7 +362,7 @@ def filter_tasks(filters_json: str) -> str:
         if t is None:
             continue
         if all(p(t) for p in predicates):
-            matched.append(task_to_dict(t, proj))
+            matched.append(task_to_dict(t, mpd))
 
     # Sort
     sort_by = f.get("sort_by", "")
@@ -396,6 +403,7 @@ def group_tasks_by(field: str, include_tasks: bool = False) -> str:
     """
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
 
     groups = {}
     total  = 0
@@ -405,7 +413,7 @@ def group_tasks_by(field: str, include_tasks: bool = False) -> str:
             continue
         total += 1
 
-        td = task_to_dict(t, proj) if include_tasks else None
+        td = task_to_dict(t, mpd) if include_tasks else None
 
         if field == "resource":
             # Split comma-separated resource names
@@ -610,6 +618,7 @@ def export_csv(output_path: str, columns_json: str = "", filters_json: str = "")
 
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
 
     # Default columns
     default_cols = ["unique_id", "name", "outline_level", "start", "finish",
@@ -629,7 +638,7 @@ def export_csv(output_path: str, columns_json: str = "", filters_json: str = "")
     else:
         for t in proj.Tasks:
             if t is not None:
-                tasks.append(task_to_dict(t, proj))
+                tasks.append(task_to_dict(t, mpd))
 
     # Write CSV
     with open(output_path, "w", newline="", encoding="utf-8") as fp:

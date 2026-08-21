@@ -36,11 +36,12 @@ def get_critical_path() -> str:
     """Return all tasks on the critical path (non-summary)."""
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
 
     results = []
     for t in proj.Tasks:
         if t is not None and t.Critical and not t.Summary:
-            results.append(task_to_dict(t, proj))
+            results.append(task_to_dict(t, mpd))
 
     return json.dumps({"count": len(results), "tasks": results}, indent=2)
 
@@ -53,6 +54,7 @@ def get_schedule_analysis() -> str:
     """
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
     mpd  = _get_mpd(proj)
 
     def fmt(dt):
@@ -118,7 +120,6 @@ def validate_schedule() -> str:
     """
     app   = get_app()
     proj  = get_proj(app)
-    mpd   = _get_mpd(proj)
     today = datetime.datetime.now()
 
     issues = {
@@ -256,6 +257,7 @@ def find_available_slack(min_days: int = 5) -> str:
     """
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
     mpd  = _get_mpd(proj)
 
     tasks = []
@@ -399,6 +401,7 @@ def get_critical_path_sequence() -> str:
     """
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
     mpd  = _get_mpd(proj)
 
     # Build adjacency graph of critical tasks only
@@ -534,6 +537,7 @@ def get_critical_tasks_for_period(
     """
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
     mpd  = _get_mpd(proj)
 
     period_start = _parse_date(start_date)
@@ -637,6 +641,7 @@ def what_if_delay(
     """
     app  = get_app()
     proj = get_proj(app)
+    mpd = _get_mpd(proj)
     mpd  = _get_mpd(proj)
 
     target = _find_task(proj, unique_id)

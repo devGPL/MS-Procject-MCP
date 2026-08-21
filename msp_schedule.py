@@ -55,7 +55,6 @@ def get_schedule_analysis() -> str:
     app  = get_app()
     proj = get_proj(app)
     mpd = _get_mpd(proj)
-    mpd  = _get_mpd(proj)
 
     tasks = []
     zero_float = 0
@@ -252,7 +251,6 @@ def find_available_slack(min_days: int = 5) -> str:
     app  = get_app()
     proj = get_proj(app)
     mpd = _get_mpd(proj)
-    mpd  = _get_mpd(proj)
 
     tasks = []
     for t in proj.Tasks:
@@ -396,16 +394,44 @@ def get_critical_path_sequence() -> str:
     app  = get_app()
     proj = get_proj(app)
     mpd = _get_mpd(proj)
-    mpd  = _get_mpd(proj)
 
-    # Build adjacency graph of critical tasks only
+    # Build adjacency graph of critical tasks only.
+    #
+    # The counters ride along on the scan that has to happen anyway. They cost
+    # one extra property read per critical task and they are what turns a
+    # degenerate answer into a diagnosable one: a schedule with no dependency
+    # network still yields "critical" tasks -- the ones that happen to end on
+    # the project finish date -- and reporting a one-step path without saying
+    # so reads as data rather than as the absence of an answer.
     critical_tasks = {}
+    scanned = 0
+    critical_total = 0
+    critical_summary = 0
     for t in proj.Tasks:
-        if t is not None and t.Critical and not t.Summary:
+        if t is None:
+            continue
+        scanned += 1
+        try:
+            if not t.Critical:
+                continue
+        except Exception:
+            continue
+        critical_total += 1
+        if t.Summary:
+            critical_summary += 1
+        else:
             critical_tasks[t.UniqueID] = t
 
     if not critical_tasks:
-        return json.dumps({"error": "No critical tasks found. Ensure the project has tasks with dependencies."})
+        return json.dumps({
+            "error": "No critical non-summary tasks found.",
+            "tasks_scanned": scanned,
+            "critical_total": critical_total,
+            "critical_summary": critical_summary,
+            "hint": "Every critical task in this project is a summary. That "
+                    "usually means the detail tasks are manually scheduled or "
+                    "unlinked, so MS Project computes no critical path.",
+        }, indent=2)
 
     # Build forward adjacency: uid -> [(successor_uid, link_type, lag_days)]
     forward = {uid: [] for uid in critical_tasks}
@@ -502,14 +528,39 @@ def get_critical_path_sequence() -> str:
     proj_start = _fmt_date(proj.ProjectStart)
     proj_finish = _fmt_date(proj.ProjectFinish)
 
-    return json.dumps({
+    linked = sum(1 for uid in critical_tasks if forward.get(uid))
+
+    resultado = {
         "project_start":       proj_start,
         "project_finish":      proj_finish,
         "critical_path_length": len(sequence),
         "total_duration_days":  total_duration,
         "total_critical_tasks": len(critical_tasks),
+        "diagnostics": {
+            "tasks_scanned":     scanned,
+            "critical_total":    critical_total,
+            "critical_summary":  critical_summary,
+            "critical_detail":   len(critical_tasks),
+            "linked_to_another_critical_task": linked,
+        },
         "sequence":            sequence,
-    }, indent=2)
+    }
+
+    # A chain of one is not a critical path, it is the absence of one. Say so
+    # rather than letting a 1.5-day "path" stand for a three-year project.
+    if linked == 0 and len(sequence) <= 1:
+        resultado["warning"] = (
+            "No critical path could be traced. The critical tasks found are not "
+            "linked to each other, so this is not a chain -- it is the single "
+            "task that happens to finish last. A schedule whose detail tasks are "
+            "manually scheduled or carry no predecessors has no dependency "
+            "network for MS Project to compute a critical path over, and every "
+            "CPM-based tool here (slack, what-if delay, schedule analysis) is "
+            "equally undefined on it. Check whether the tasks came from a "
+            "planning method that does not use CPM."
+        )
+
+    return json.dumps(resultado, indent=2)
 
 
 @mcp.tool()
@@ -532,7 +583,6 @@ def get_critical_tasks_for_period(
     app  = get_app()
     proj = get_proj(app)
     mpd = _get_mpd(proj)
-    mpd  = _get_mpd(proj)
 
     period_start = _parse_date(start_date)
     period_end   = _parse_date(end_date)
@@ -636,7 +686,6 @@ def what_if_delay(
     app  = get_app()
     proj = get_proj(app)
     mpd = _get_mpd(proj)
-    mpd  = _get_mpd(proj)
 
     target = _find_task(proj, unique_id)
     if target is None:

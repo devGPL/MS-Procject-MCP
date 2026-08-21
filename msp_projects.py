@@ -89,7 +89,6 @@ def get_project_info() -> str:
     app  = get_app()
     proj = get_proj(app)
     mpd = _get_mpd(proj)
-    mpd  = _get_mpd(proj)
 
     task_count    = sum(1 for t in proj.Tasks if t is not None)
     summary_count = sum(1 for t in proj.Tasks if t is not None and t.Summary)

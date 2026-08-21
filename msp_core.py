@@ -177,6 +177,45 @@ def _to_naive(dt):
     return dt
 
 
+
+def _calendar_names(proj):
+    """Names of every base calendar, for validation and error messages.
+
+    Returns [] when the collection cannot be read, which is indistinguishable
+    from a project that has no calendars. Callers report "not found" either
+    way, so a COM failure currently surfaces as a missing calendar. That is
+    pre-existing behaviour, preserved here deliberately -- centralising it is
+    what makes the diagnosis fixable in one place later.
+    """
+    names = []
+    try:
+        for cal in proj.BaseCalendars:
+            if cal is not None:
+                names.append(str(cal.Name))
+    except Exception:
+        pass
+    return names
+
+
+def _find_calendar(proj, name):
+    """Return the base calendar matching `name`, case-insensitively.
+
+    MS Project treats calendar names case-insensitively. Matching them
+    byte-for-byte is what made set_calendar_exception("standard") fail on the
+    same project where set_working_hours("standard") worked.
+    """
+    if not name:
+        return None
+    target = str(name).lower()
+    try:
+        for cal in proj.BaseCalendars:
+            if cal is not None and str(cal.Name).lower() == target:
+                return cal
+    except Exception:
+        return None
+    return None
+
+
 def _find_task(proj, unique_id):
     """Find a task by UniqueID. Returns the COM Task object or None."""
     for t in proj.Tasks:

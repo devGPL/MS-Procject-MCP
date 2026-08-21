@@ -18,6 +18,8 @@ strand the fallback.
 import json
 
 from msp_core import (
+    _calendar_names,
+    _find_calendar,
     mcp,
     get_app,
     get_proj,
@@ -33,13 +35,7 @@ def get_calendars() -> str:
     app  = get_app()
     proj = get_proj(app)
 
-    calendars = []
-    try:
-        for cal in proj.BaseCalendars:
-            if cal is not None:
-                calendars.append(str(cal.Name))
-    except Exception:
-        pass
+    calendars = _calendar_names(proj)
 
     active = ""
     try:
@@ -75,13 +71,7 @@ def set_calendar_exception(
     proj = get_proj(app)
 
     # Validate calendar exists
-    valid_cals = []
-    try:
-        for cal in proj.BaseCalendars:
-            if cal is not None:
-                valid_cals.append(str(cal.Name))
-    except Exception:
-        pass
+    valid_cals = _calendar_names(proj)
 
     # MS Project treats calendar names case-insensitively; match the same
     # way and canonicalise, so later comparisons against cal.Name hold.
@@ -93,10 +83,7 @@ def set_calendar_exception(
     try:
         # Use the Calendar.Exceptions collection for date-range exceptions
         cal = None
-        for c in proj.BaseCalendars:
-            if c is not None and str(c.Name) == calendar_name:
-                cal = c
-                break
+        cal = _find_calendar(proj, calendar_name)
 
         # pjCalendarExceptionDaily = 1
         start_dt  = _parse_date(start)
@@ -128,13 +115,7 @@ def set_project_calendar(calendar_name: str) -> str:
     proj = get_proj(app)
 
     # Validate
-    valid_cals = []
-    try:
-        for cal in proj.BaseCalendars:
-            if cal is not None:
-                valid_cals.append(str(cal.Name))
-    except Exception:
-        pass
+    valid_cals = _calendar_names(proj)
 
     # MS Project treats calendar names case-insensitively; match the same
     # way and canonicalise, so later comparisons against cal.Name hold.
@@ -164,11 +145,10 @@ def set_project_calendar(calendar_name: str) -> str:
     # Approach 2: use the Calendar object from BaseCalendars
     if not set_ok:
         try:
-            for cal in proj.BaseCalendars:
-                if cal is not None and str(cal.Name) == calendar_name:
-                    proj.Calendar = cal
-                    set_ok = True
-                    break
+            cal = _find_calendar(proj, calendar_name)
+            if cal is not None:
+                proj.Calendar = cal
+                set_ok = True
         except Exception as e:
             errors.append(f"object: {e}")
 
@@ -217,13 +197,7 @@ def set_task_calendar(unique_id: int, calendar_name: str) -> str:
 
     # Validate calendar exists (if not clearing)
     if calendar_name:
-        valid_cals = []
-        try:
-            for cal in proj.BaseCalendars:
-                if cal is not None:
-                    valid_cals.append(str(cal.Name))
-        except Exception:
-            pass
+        valid_cals = _calendar_names(proj)
         # MS Project treats calendar names case-insensitively; match the same
         # way and canonicalise, so later comparisons against cal.Name hold.
         _match = next((c for c in valid_cals if c.lower() == calendar_name.lower()), None)
@@ -267,13 +241,7 @@ def create_calendar(name: str, copy_from: str = "Standard") -> str:
     proj = get_proj(app)
 
     # Validate copy_from exists
-    valid_cals = []
-    try:
-        for cal in proj.BaseCalendars:
-            if cal is not None:
-                valid_cals.append(str(cal.Name))
-    except Exception:
-        pass
+    valid_cals = _calendar_names(proj)
 
     # MS Project treats calendar names case-insensitively; match the same
     # way and canonicalise, so later comparisons against cal.Name hold.
@@ -294,13 +262,7 @@ def create_calendar(name: str, copy_from: str = "Standard") -> str:
             return json.dumps({"error": f"Failed to create calendar: {e}"})
 
     # Re-read calendar list
-    calendars = []
-    try:
-        for cal in proj.BaseCalendars:
-            if cal is not None:
-                calendars.append(str(cal.Name))
-    except Exception:
-        pass
+    calendars = _calendar_names(proj)
 
     return json.dumps({
         "status":     "created",
@@ -329,10 +291,7 @@ def list_calendar_exceptions(calendar_name: str = "") -> str:
             calendar_name = "Standard"
 
     cal = None
-    for c in proj.BaseCalendars:
-        if c is not None and str(c.Name).lower() == str(calendar_name).lower():
-            cal = c
-            break
+    cal = _find_calendar(proj, str(calendar_name))
     if cal is None:
         return json.dumps({"error": f"Calendar '{calendar_name}' not found."})
 
@@ -373,11 +332,11 @@ def delete_calendar(calendar_name: str) -> str:
     if proj_cal == calendar_name.lower():
         return json.dumps({"error": "Cannot delete the active project calendar."})
 
-    for c in proj.BaseCalendars:
-        if c is not None and str(c.Name).lower() == calendar_name.lower():
-            c.Delete()
-            app.FileSave()
-            return json.dumps({"status": "deleted", "calendar": calendar_name})
+    cal = _find_calendar(proj, calendar_name)
+    if cal is not None:
+        cal.Delete()
+        app.FileSave()
+        return json.dumps({"status": "deleted", "calendar": calendar_name})
 
     return json.dumps({"error": f"Calendar '{calendar_name}' not found."})
 
@@ -395,10 +354,7 @@ def delete_calendar_exception(calendar_name: str, exception_name: str) -> str:
     proj = get_proj(app)
 
     cal = None
-    for c in proj.BaseCalendars:
-        if c is not None and str(c.Name).lower() == calendar_name.lower():
-            cal = c
-            break
+    cal = _find_calendar(proj, calendar_name)
     if cal is None:
         return json.dumps({"error": f"Calendar '{calendar_name}' not found."})
 
@@ -431,12 +387,7 @@ def set_resource_calendar(resource_name: str, calendar_name: str) -> str:
     proj = get_proj(app)
 
     # Verify calendar exists
-    cal_found = False
-    for c in proj.BaseCalendars:
-        if c is not None and str(c.Name).lower() == calendar_name.lower():
-            cal_found = True
-            break
-    if not cal_found:
+    if _find_calendar(proj, calendar_name) is None:
         return json.dumps({"error": f"Calendar '{calendar_name}' not found."})
 
     for r in proj.Resources:
@@ -470,10 +421,7 @@ def set_working_hours(calendar_name: str, day: int, shifts_json: str) -> str:
         return json.dumps({"error": "day must be 1 (Sunday) through 7 (Saturday)."})
 
     cal = None
-    for c in proj.BaseCalendars:
-        if c is not None and str(c.Name).lower() == calendar_name.lower():
-            cal = c
-            break
+    cal = _find_calendar(proj, calendar_name)
     if cal is None:
         return json.dumps({"error": f"Calendar '{calendar_name}' not found."})
 

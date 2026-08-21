@@ -141,6 +141,42 @@ args = ["C:\\caminho\\para\\MS-Procject-MCP\\server.py"]
 
 ---
 
+## MS Project numa VM (Parallels, VMware, Hyper-V)
+
+Se o Claude roda no macOS e o MS Project numa VM Windows, **não** dá para usar o padrão de SSH que funciona com outros MCPs.
+
+O motivo é específico deste servidor. `GetActiveObject` lê a *Running Object Table* do Windows, que é **por sessão de logon**. Um login SSH cai na sessão 0; o MS Project aberto na área de trabalho está na sessão 1. Da sessão 0 ele é invisível, e a tentativa falha com `MK_E_UNAVAILABLE (0x800401E3)` mesmo com o programa aberto.
+
+Servidores que conversam por porta TCP com o aplicativo alvo atravessam sessão sem problema — este precisa anexar via COM, e COM não atravessa.
+
+A solução é inverter o que cruza a fronteira: em vez do COM atravessar a sessão, o **HTTP atravessa a máquina**.
+
+### Na VM Windows
+
+Instale e rode **a partir da área de trabalho** — um terminal aberto na VM, um atalho, ou a pasta Inicializar. Nunca por SSH:
+
+```bash
+msproject-mcp --transport streamable-http --host 0.0.0.0 --port 8765
+```
+
+Libere a porta no firewall, uma vez só (PowerShell como administrador):
+
+```powershell
+New-NetFirewallRule -DisplayName "MS Project MCP" -Direction Inbound -LocalPort 8765 -Protocol TCP -Action Allow
+```
+
+### No Mac
+
+```bash
+claude mcp add --transport http msproject http://10.211.55.5:8765/mcp
+```
+
+Troque o IP pelo da sua VM (`ipconfig` no Windows). No Claude Desktop, use `"url": "http://10.211.55.5:8765/mcp"` em vez de `command`/`args`.
+
+> **Segurança**: `--host 0.0.0.0` aceita conexões de qualquer interface e o servidor não tem autenticação própria. Use apenas em rede host-only do Parallels/VMware. Numa rede compartilhada com terceiros, qualquer um que alcance a porta controla o seu MS Project.
+
+---
+
 ## Verificando a conexão
 
 Peça ao assistente para rodar `health_check`. A resposta traz a versão do MS Project e o status do arquivo aberto. Se falhar:

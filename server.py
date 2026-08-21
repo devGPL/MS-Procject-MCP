@@ -41,9 +41,14 @@ import msp_tasks_read  # noqa: F401
 import msp_tasks_write  # noqa: F401
 
 
-if __name__ == "__main__":
+def main():
+    """Console entry point. Also reachable as `python server.py`."""
     # stdout is the MCP stdio transport -- anything written here corrupts the
     # protocol. Diagnostics go to stderr.
     print("Starting MS Project MCP Server...", file=sys.stderr)
     print("MS Project must be running with a file open before using tools.", file=sys.stderr)
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()

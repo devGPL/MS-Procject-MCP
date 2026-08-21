@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "msproject-mcp"
+version = "0.7.0"
+description = "Control Microsoft Project via COM automation through the Model Context Protocol"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+    # Pinned to a minor range on purpose. Every test suite carries defensive
+    # code for two different call_tool return shapes, which is the fingerprint
+    # of an earlier breaking change in this dependency.
+    "mcp>=1.20,<2",
+    # Windows-only, and the whole server is: COM automation does not exist
+    # elsewhere. The marker keeps `pip install` from failing on macOS/Linux,
+    # where the modules still import and the gates in tools/ still run.
+    "pywin32>=306; sys_platform == 'win32'",
+    # Required by add_recurring_task. Was documented in prose only.
+    "python-dateutil>=2.8",
+]
+
+[project.scripts]
+msproject-mcp = "server:main"
+
+[project.urls]
+Repository = "https://github.com/devGPL/MS-Procject-MCP"
+
+[tool.setuptools]
+# Flat modules, not a package: server.py imports its nine siblings directly.
+py-modules = [
+    "server",
+    "msp_core",
+    "msp_projects",
+    "msp_tasks_read",
+    "msp_tasks_write",
+    "msp_dependencies",
+    "msp_resources",
+    "msp_calendars",
+    "msp_schedule",
+    "msp_baselines_costs",
+    "msp_customfields",
+]

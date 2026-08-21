@@ -31,6 +31,78 @@ from msp_core import (
 )
 
 
+
+# ---------------------------------------------------------------------------
+# Dependency-network probe
+#
+# Every tool in this module computes over the network of links between tasks.
+# A project whose detail tasks carry no predecessors has no network, and CPM is
+# undefined on it -- but the tools still return numbers, and those numbers look
+# like measurements. Slack comes back as zero for every task, which reads as
+# "everything is critical" rather than "nothing is computed".
+#
+# Measured on a real 7,985-task schedule exported from a non-CPM planning tool:
+# 7,583 detail tasks, none with a predecessor, and get_schedule_analysis
+# reporting a project where every task has zero float.
+# ---------------------------------------------------------------------------
+
+# Once this many linked tasks are seen the project demonstrably has a network,
+# and further probing is wasted COM reads. A healthy project stops early; a
+# degenerate one pays for the whole scan, which is exactly where the answer
+# matters.
+_LINK_PROBE_CEILING = 200
+
+
+def _new_probe():
+    return {"detail": 0, "linked": 0, "probing": True}
+
+
+def _probe_link(probe, task):
+    """Count one detail task, and whether it has a predecessor.
+
+    Costs one extra property read per detail task, and stops once the network
+    is proven. Reads Predecessors only: any real network has tasks with
+    predecessors, so Successors would double the cost to learn nothing more.
+    """
+    probe["detail"] += 1
+    if not probe["probing"]:
+        return
+    try:
+        if task.Predecessors:
+            probe["linked"] += 1
+            if probe["linked"] >= _LINK_PROBE_CEILING:
+                probe["probing"] = False
+    except Exception:
+        pass
+
+
+def _probe_report(probe):
+    """Diagnostics block for the response."""
+    return {
+        "detail_tasks_scanned": probe["detail"],
+        "with_predecessor": (
+            probe["linked"] if probe["probing"]
+            else ">= %d (stopped counting)" % _LINK_PROBE_CEILING
+        ),
+    }
+
+
+def _network_warning(probe, o_que):
+    """Warning when there is no network to compute `o_que` over, else None."""
+    if probe["detail"] == 0 or probe["linked"] > 0:
+        return None
+    return (
+        "No dependency network found: none of the %d detail tasks has a "
+        "predecessor. %s is computed over the links between tasks, so on this "
+        "project it has nothing to compute and the numbers above should not be "
+        "read as a result. This happens when a schedule is manually scheduled "
+        "throughout, or was exported from a planning method that does not use "
+        "CPM. Every CPM-based tool here -- critical path, slack, what-if delay, "
+        "schedule analysis -- is equally undefined on it."
+        % (probe["detail"], o_que)
+    )
+
+
 @mcp.tool()
 def get_critical_path() -> str:
     """Return all tasks on the critical path (non-summary)."""
@@ -39,11 +111,23 @@ def get_critical_path() -> str:
     mpd = _get_mpd(proj)
 
     results = []
+    probe = _new_probe()
     for t in proj.Tasks:
-        if t is not None and t.Critical and not t.Summary:
+        if t is None or t.Summary:
+            continue
+        _probe_link(probe, t)
+        if t.Critical:
             results.append(task_to_dict(t, mpd))
 
-    return json.dumps({"count": len(results), "tasks": results}, indent=2)
+    saida = {
+        "count": len(results),
+        "diagnostics": _probe_report(probe),
+        "tasks": results,
+    }
+    aviso = _network_warning(probe, "The critical path")
+    if aviso:
+        saida["warning"] = aviso
+    return json.dumps(saida, indent=2)
 
 
 @mcp.tool()
@@ -62,10 +146,12 @@ def get_schedule_analysis() -> str:
     total_slack_sum = 0
     count = 0
 
+    probe = _new_probe()
     for t in proj.Tasks:
         if t is None or t.Summary:
             continue
         count += 1
+        _probe_link(probe, t)
 
         try:
             ts = round(t.TotalSlack / mpd, 2) if t.TotalSlack is not None else 0
@@ -92,15 +178,23 @@ def get_schedule_analysis() -> str:
             "finish":          _fmt_date(t.Finish),
         })
 
-    return json.dumps({
+    saida = {
         "summary": {
             "total_tasks":     count,
             "zero_float":      zero_float,
             "negative_float":  negative_float,
             "avg_total_slack":  round(total_slack_sum / count, 2) if count else 0,
         },
+        "diagnostics": _probe_report(probe),
         "tasks": tasks,
-    }, indent=2)
+    }
+    aviso = _network_warning(probe, "Float analysis")
+    if aviso:
+        # Without links every task reports zero slack, so "zero_float" above
+        # equals the task count and reads as a project entirely on the critical
+        # path. It is the opposite: nothing was computed.
+        saida["warning"] = aviso
+    return json.dumps(saida, indent=2)
 
 
 @mcp.tool()
@@ -253,9 +347,11 @@ def find_available_slack(min_days: int = 5) -> str:
     mpd = _get_mpd(proj)
 
     tasks = []
+    probe = _new_probe()
     for t in proj.Tasks:
         if t is None or t.Summary:
             continue
+        _probe_link(probe, t)
 
         try:
             ts = t.TotalSlack
@@ -285,11 +381,16 @@ def find_available_slack(min_days: int = 5) -> str:
 
     tasks.sort(key=lambda x: x["total_slack_days"], reverse=True)
 
-    return json.dumps({
-        "min_days": min_days,
-        "count":    len(tasks),
-        "tasks":    tasks,
-    }, indent=2)
+    saida = {
+        "min_days":    min_days,
+        "count":       len(tasks),
+        "diagnostics": _probe_report(probe),
+        "tasks":       tasks,
+    }
+    aviso = _network_warning(probe, "Available slack")
+    if aviso:
+        saida["warning"] = aviso
+    return json.dumps(saida, indent=2)
 
 
 @mcp.tool()
@@ -698,9 +799,11 @@ def what_if_delay(
 
     # Gather current state of all tasks
     task_data = {}
+    probe = _new_probe()
     for t in proj.Tasks:
         if t is None or t.Summary:
             continue
+        _probe_link(probe, t)
         try:
             ts = t.TotalSlack if t.TotalSlack is not None else 0
             fs = t.FreeSlack if t.FreeSlack is not None else 0
@@ -815,7 +918,7 @@ def what_if_delay(
         severity = "NONE"
         summary = f"Task has {slack_days} days of slack. A {delay_days}-day delay is fully absorbed."
 
-    return json.dumps({
+    saida = {
         "task":               {"unique_id": unique_id, "name": target_info["name"]},
         "simulated_delay_days": delay_days,
         "severity":           severity,
@@ -830,5 +933,14 @@ def what_if_delay(
         "newly_critical_count":  len(newly_critical),
         "newly_critical":        newly_critical,
         "slack_consumed":        slack_consumed,
+        "diagnostics":           _probe_report(probe),
         "downstream_tasks":      downstream_affected,
-    }, indent=2)
+    }
+    aviso = _network_warning(probe, "Delay propagation")
+    if aviso:
+        # The most dangerous of the four when it goes unflagged: it reports a
+        # severity and a new finish date for a delay that cannot propagate,
+        # because there are no links to propagate along. Downstream is always
+        # empty and the impact always reads as none.
+        saida["warning"] = aviso
+    return json.dumps(saida, indent=2)

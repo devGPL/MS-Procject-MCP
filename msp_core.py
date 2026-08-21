@@ -44,13 +44,25 @@ TIMESCALE_MAP = {"daily": 3, "weekly": 4, "monthly": 5}
 # ---------------------------------------------------------------------------
 
 def get_app(require_project=True):
-    """Get running MS Project instance. Raises if not running."""
+    """Get the running MS Project instance. Raises if it cannot be reached."""
     import win32com.client
     try:
         app = win32com.client.GetActiveObject("MSProject.Application")
-    except Exception:
+    except Exception as exc:
+        # "Not running" is the most likely cause but not the only one, and
+        # reporting it as fact sends people to check something that is already
+        # true. MS Project registers in the Running Object Table only once a
+        # project is open, so an application sitting on its start screen is
+        # running and still unreachable -- with the same error. The ROT is also
+        # per logon session, so a server started over SSH (session 0) cannot
+        # see an MS Project on the interactive desktop (session 1).
         raise RuntimeError(
-            "MS Project is not running. Open MS Project and load a file first."
+            "Could not attach to MS Project (" + type(exc).__name__ + ": "
+            + str(exc)[:160] + "). Check, in order: MS Project is running; it "
+            "has a project OPEN, not just the start screen -- it does not "
+            "register for automation until then; and this server runs in the "
+            "same Windows logon session as MS Project, which rules out "
+            "starting it over SSH."
         )
     if require_project and app.Projects.Count == 0:
         raise RuntimeError(

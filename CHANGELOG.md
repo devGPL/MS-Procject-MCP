@@ -48,6 +48,7 @@ A diferença é observável: uma tarefa excluída no meio do mesmo lote continua
 
 - `pyproject.toml` declara as dependências, que antes só existiam em prosa no README — `python-dateutil` era importado em runtime sem constar em lugar executável.
 - Novo comando `msproject-mcp`, o que remove o caminho absoluto da configuração do cliente MCP.
+- `mcp` limitado a `<1.20`. A partir da 1.20 ele passou a depender de `pyjwt[crypto]`, que puxa `cryptography` — e `cryptography` publicou wheels para Windows ARM64 só até a 46.0.3. Em Windows on ARM, o `pip install` tentava compilar do zero e falhava por falta do linker do MSVC, exigindo Rust e Visual Studio Build Tools numa arquitetura e nada na outra. Este servidor não autentica nada, então PyJWT era subárvore morta. Com o teto, as 28 dependências têm wheel pronto tanto em `win_arm64` quanto em `win_amd64`, e a instalação é idêntica nas duas.
 
 ### Ferramentas de desenvolvimento
 

@@ -13,6 +13,7 @@ Controla o Microsoft Project via automação COM através do Model Context Proto
 | SO | **Windows** (a automação COM não existe em macOS/Linux) |
 | Microsoft Project | Instalado e **em execução** (testado no MS Project 16.0) |
 | Python | 3.10 ou superior |
+| Arquitetura | x64 e ARM64, sem diferença de instalação — nenhuma dependência precisa de compilador |
 
 ```bash
 pip install mcp pywin32 python-dateutil
@@ -187,6 +188,7 @@ Peça ao assistente para rodar `health_check`. A resposta traz a versão do MS P
 | `No project file is open` | Project aberto sem arquivo | Abra ou crie um `.mpp` |
 | Servidor não aparece no cliente | Caminho errado ou JSON/TOML inválido | Confira o caminho absoluto e reinicie o cliente |
 | `ModuleNotFoundError: win32com` | `pywin32` ausente no Python usado | Instale no mesmo interpretador que está no `command` |
+| `Failed building wheel for cryptography` / `linker link.exe not found` | Versão do `mcp` fora do teto declarado, puxando `cryptography`, que não tem wheel para Windows ARM | `pip install -e .` a partir deste repositório — o teto `mcp<1.20` evita a dependência |
 
 ---
 

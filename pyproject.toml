@@ -10,10 +10,26 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 dependencies = [
-    # Pinned to a minor range on purpose. Every test suite carries defensive
-    # code for two different call_tool return shapes, which is the fingerprint
-    # of an earlier breaking change in this dependency.
-    "mcp>=1.20,<2",
+    # Capped below 1.20 deliberately, and the cap is load-bearing.
+    #
+    # mcp 1.20 added `pyjwt[crypto]`, which pulls `cryptography`. cryptography
+    # published win_arm64 wheels up to 46.0.3 and stopped; 50.0.0 ships
+    # win_amd64 only. On Windows on ARM pip therefore tries to build it from
+    # source and fails on the missing MSVC linker, so `pip install` needs Rust
+    # plus Visual Studio Build Tools on ARM and nothing on x64 -- two different
+    # setups for the same project.
+    #
+    # This server never authenticates anything, so PyJWT is dead weight here.
+    # Capping below 1.20 drops that whole subtree and makes the install
+    # identical on both architectures, with no compiler on either.
+    #
+    # The floor is also deliberate: every suite carries defensive code for two
+    # call_tool return shapes, the fingerprint of an earlier breaking change.
+    #
+    # Verified: 1.19 registers the same 99 tools with a byte-identical schema
+    # snapshot to 1.29, and supports the streamable-http transport this server
+    # needs for the VM setup.
+    "mcp>=1.16,<1.20",
     # Windows-only, and the whole server is: COM automation does not exist
     # elsewhere. The marker keeps `pip install` from failing on macOS/Linux,
     # where the modules still import and the gates in tools/ still run.

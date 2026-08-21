@@ -20,6 +20,7 @@ carries it; it must never be sliced apart.
 import json
 
 from msp_core import (
+    _find_resource,
     TIMESCALE_MAP,
     mcp,
     get_app,
@@ -118,11 +119,7 @@ def assign_resource(task_unique_id: int, resource_name: str, units: float = 1.0)
         return json.dumps({"error": f"Task UniqueID {task_unique_id} not found."})
 
     # Check if resource exists, create if not
-    res_exists = False
-    for r in proj.Resources:
-        if r is not None and r.Name.lower() == resource_name.lower():
-            res_exists = True
-            break
+    res_exists = _find_resource(proj, resource_name) is not None
     if not res_exists:
         proj.Resources.Add(resource_name)
 
@@ -161,11 +158,7 @@ def get_resource_workload(resource_name: str, start_date: str = "", end_date: st
     proj = get_proj(app)
 
     # Find resource
-    resource = None
-    for r in proj.Resources:
-        if r is not None and r.Name.lower() == resource_name.lower():
-            resource = r
-            break
+    resource = _find_resource(proj, resource_name)
 
     if resource is None:
         # List available resources
@@ -361,11 +354,7 @@ def update_resource(resource_name: str, new_name: str = "", max_units: float = -
     app  = get_app()
     proj = get_proj(app)
 
-    resource = None
-    for r in proj.Resources:
-        if r is not None and r.Name.lower() == resource_name.lower():
-            resource = r
-            break
+    resource = _find_resource(proj, resource_name)
 
     if resource is None:
         avail = [r.Name for r in proj.Resources if r is not None]
@@ -402,11 +391,7 @@ def delete_resource(resource_name: str) -> str:
     app  = get_app()
     proj = get_proj(app)
 
-    target = None
-    for r in proj.Resources:
-        if r is not None and r.Name.lower() == resource_name.lower():
-            target = r
-            break
+    target = _find_resource(proj, resource_name)
 
     if target is None:
         return json.dumps({"error": f"Resource '{resource_name}' not found."})
@@ -459,11 +444,7 @@ def get_resource_availability(
     if ts is None:
         return json.dumps({"error": f"Unknown timescale '{timescale}'. Use: daily, weekly, monthly."})
 
-    res = None
-    for r in proj.Resources:
-        if r is not None and r.Name and r.Name.lower() == resource_name.lower():
-            res = r
-            break
+    res = _find_resource(proj, resource_name)
     if res is None:
         return json.dumps({"error": f"Resource '{resource_name}' not found."})
 
@@ -510,11 +491,7 @@ def get_resource_rate_tables(resource_name: str) -> str:
     app  = get_app()
     proj = get_proj(app)
 
-    res = None
-    for r in proj.Resources:
-        if r is not None and r.Name and r.Name.lower() == resource_name.lower():
-            res = r
-            break
+    res = _find_resource(proj, resource_name)
     if res is None:
         return json.dumps({"error": f"Resource '{resource_name}' not found."})
 
@@ -570,11 +547,7 @@ def set_resource_rate_table(
     if tbl_idx is None:
         return json.dumps({"error": f"Invalid table '{table}'. Use A-E."})
 
-    res = None
-    for r in proj.Resources:
-        if r is not None and r.Name and r.Name.lower() == resource_name.lower():
-            res = r
-            break
+    res = _find_resource(proj, resource_name)
     if res is None:
         return json.dumps({"error": f"Resource '{resource_name}' not found."})
 

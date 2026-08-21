@@ -216,6 +216,27 @@ def _find_calendar(proj, name):
     return None
 
 
+
+def _find_resource(proj, name):
+    """Return the resource matching `name`, case-insensitively.
+
+    A resource with no name is skipped rather than raising. Four of the eight
+    inline lookups this replaces called r.Name.lower() with no guard, so one
+    nameless resource anywhere in the pool made them fail with AttributeError
+    -- and which four had the guard was arbitrary.
+    """
+    if not name:
+        return None
+    target = str(name).lower()
+    try:
+        for r in proj.Resources:
+            if r is not None and r.Name and str(r.Name).lower() == target:
+                return r
+    except Exception:
+        return None
+    return None
+
+
 def _find_task(proj, unique_id):
     """Find a task by UniqueID. Returns the COM Task object or None."""
     for t in proj.Tasks:

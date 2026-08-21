@@ -18,6 +18,7 @@ strand the fallback.
 import json
 
 from msp_core import (
+    _find_resource,
     _calendar_names,
     _find_calendar,
     mcp,
@@ -390,8 +391,8 @@ def set_resource_calendar(resource_name: str, calendar_name: str) -> str:
     if _find_calendar(proj, calendar_name) is None:
         return json.dumps({"error": f"Calendar '{calendar_name}' not found."})
 
-    for r in proj.Resources:
-        if r is not None and r.Name and r.Name.lower() == resource_name.lower():
+    r = _find_resource(proj, resource_name)
+    if r is not None:
             r.BaseCalendar = calendar_name
             app.FileSave()
             return json.dumps({

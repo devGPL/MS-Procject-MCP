@@ -83,8 +83,12 @@ def set_calendar_exception(
     except Exception:
         pass
 
-    if calendar_name not in valid_cals:
+    # MS Project treats calendar names case-insensitively; match the same
+    # way and canonicalise, so later comparisons against cal.Name hold.
+    _match = next((c for c in valid_cals if c.lower() == calendar_name.lower()), None)
+    if _match is None:
         return json.dumps({"error": f"Calendar '{calendar_name}' not found. Available: {valid_cals}"})
+    calendar_name = _match
 
     try:
         # Use the Calendar.Exceptions collection for date-range exceptions
@@ -132,8 +136,12 @@ def set_project_calendar(calendar_name: str) -> str:
     except Exception:
         pass
 
-    if calendar_name not in valid_cals:
+    # MS Project treats calendar names case-insensitively; match the same
+    # way and canonicalise, so later comparisons against cal.Name hold.
+    _match = next((c for c in valid_cals if c.lower() == calendar_name.lower()), None)
+    if _match is None:
         return json.dumps({"error": f"Calendar '{calendar_name}' not found. Available: {valid_cals}"})
+    calendar_name = _match
 
     previous = ""
     try:
@@ -216,8 +224,12 @@ def set_task_calendar(unique_id: int, calendar_name: str) -> str:
                     valid_cals.append(str(cal.Name))
         except Exception:
             pass
-        if calendar_name not in valid_cals:
+        # MS Project treats calendar names case-insensitively; match the same
+        # way and canonicalise, so later comparisons against cal.Name hold.
+        _match = next((c for c in valid_cals if c.lower() == calendar_name.lower()), None)
+        if _match is None:
             return json.dumps({"error": f"Calendar '{calendar_name}' not found. Available: {valid_cals}"})
+        calendar_name = _match
 
     previous = ""
     try:
@@ -263,10 +275,14 @@ def create_calendar(name: str, copy_from: str = "Standard") -> str:
     except Exception:
         pass
 
-    if copy_from not in valid_cals:
+    # MS Project treats calendar names case-insensitively; match the same
+    # way and canonicalise, so later comparisons against cal.Name hold.
+    _match = next((c for c in valid_cals if c.lower() == copy_from.lower()), None)
+    if _match is None:
         return json.dumps({"error": f"Calendar '{copy_from}' not found. Available: {valid_cals}"})
+    copy_from = _match
 
-    if name in valid_cals:
+    if any(c.lower() == name.lower() for c in valid_cals):
         return json.dumps({"error": f"Calendar '{name}' already exists."})
 
     try:

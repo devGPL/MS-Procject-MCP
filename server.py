@@ -7,6 +7,7 @@ Register in claude_desktop_config.json (see bottom of file).
 """
 
 import json
+import sys
 import datetime
 from mcp.server.fastmcp import FastMCP
 
@@ -5187,8 +5188,10 @@ def what_if_delay(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    print("Starting MS Project MCP Server...")
-    print("MS Project must be running with a file open before using tools.")
+    # stdout is the MCP stdio transport -- anything written here corrupts
+    # the protocol. Diagnostics go to stderr.
+    print("Starting MS Project MCP Server...", file=sys.stderr)
+    print("MS Project must be running with a file open before using tools.", file=sys.stderr)
     mcp.run()
 
 

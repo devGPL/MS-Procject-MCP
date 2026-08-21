@@ -50,19 +50,27 @@ def get_app(require_project=True):
         app = win32com.client.GetActiveObject("MSProject.Application")
     except Exception as exc:
         # "Not running" is the most likely cause but not the only one, and
-        # reporting it as fact sends people to check something that is already
-        # true. MS Project registers in the Running Object Table only once a
-        # project is open, so an application sitting on its start screen is
-        # running and still unreachable -- with the same error. The ROT is also
-        # per logon session, so a server started over SSH (session 0) cannot
-        # see an MS Project on the interactive desktop (session 1).
+        # reporting it as fact sends people to check something already true.
+        #
+        # The Running Object Table is partitioned two ways, and both partitions
+        # are invisible from the outside:
+        #
+        #   By logon session. A server started over SSH lands in session 0 and
+        #   cannot see an MS Project on the interactive desktop in session 1.
+        #
+        #   By integrity level. A server launched from an elevated shell runs
+        #   High while MS Project runs Medium, and High does not see Medium's
+        #   registrations. Same desktop, same user, same session -- separate
+        #   tables. Running as administrator makes this WORSE, not better,
+        #   which is the opposite of what anyone debugging it will try.
         raise RuntimeError(
             "Could not attach to MS Project (" + type(exc).__name__ + ": "
-            + str(exc)[:160] + "). Check, in order: MS Project is running; it "
-            "has a project OPEN, not just the start screen -- it does not "
-            "register for automation until then; and this server runs in the "
-            "same Windows logon session as MS Project, which rules out "
-            "starting it over SSH."
+            + str(exc)[:160] + "). Check, in order: MS Project is running with "
+            "a project open; this server was NOT started from an elevated "
+            "shell -- 'run as administrator' hides a normally-launched MS "
+            "Project rather than helping; and this server runs in the same "
+            "Windows logon session as MS Project, which rules out starting it "
+            "over SSH."
         )
     if require_project and app.Projects.Count == 0:
         raise RuntimeError(

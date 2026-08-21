@@ -154,7 +154,7 @@ A solução é inverter o que cruza a fronteira: em vez do COM atravessar a sess
 
 ### Na VM Windows
 
-Instale e rode **a partir da área de trabalho** — um terminal aberto na VM, um atalho, ou a pasta Inicializar. Nunca por SSH:
+Instale e rode **a partir da área de trabalho** — um terminal aberto na VM, um atalho, ou a pasta Inicializar. Nunca por SSH, e **nunca como administrador**:
 
 ```bash
 msproject-mcp --transport streamable-http --host 0.0.0.0 --port 8765
@@ -174,6 +174,8 @@ claude mcp add --transport http msproject http://10.211.55.5:8765/mcp
 
 Troque o IP pelo da sua VM (`ipconfig` no Windows). No Claude Desktop, use `"url": "http://10.211.55.5:8765/mcp"` em vez de `command`/`args`.
 
+> **Não eleve o terminal.** A Running Object Table também é separada por nível de integridade: um servidor iniciado como administrador roda em *High* e não enxerga o MS Project aberto normalmente, em *Medium*. Mesma máquina, mesma sessão, mesmo usuário — e o erro é idêntico ao de "não está rodando". A regra de firewall precisa de admin uma única vez; o servidor, nunca.
+
 > **Segurança**: `--host 0.0.0.0` aceita conexões de qualquer interface e o servidor não tem autenticação própria. Use apenas em rede host-only do Parallels/VMware. Numa rede compartilhada com terceiros, qualquer um que alcance a porta controla o seu MS Project.
 
 ---
@@ -184,6 +186,7 @@ Peça ao assistente para rodar `health_check`. A resposta traz a versão do MS P
 
 | Erro | Causa | Solução |
 |------|-------|---------|
+| `Could not attach to MS Project` com o MS Project claramente aberto | Servidor iniciado como administrador. A Running Object Table é filtrada por nível de integridade: um processo *High* não enxerga um *Medium* | Suba o servidor num PowerShell **normal**. Rodar como admin piora, não ajuda |
 | `MS Project is not running` | Nenhuma instância ativa | Abra o MS Project |
 | `No project file is open` | Project aberto sem arquivo | Abra ou crie um `.mpp` |
 | Servidor não aparece no cliente | Caminho errado ou JSON/TOML inválido | Confira o caminho absoluto e reinicie o cliente |

@@ -31,6 +31,10 @@ import datetime
 import msp_fast
 
 from msp_core import (
+    LIMITE_PADRAO,
+    responder,
+    enxugar,
+    recortar,
     TIMESCALE_MAP,
     mcp,
     get_app,
@@ -54,12 +58,11 @@ def get_tasks(
     keyword: str = ""
 ) -> str:
     """
-    Get all tasks from the active project.
-
-    Args:
-        include_summary: Include summary/parent tasks (default False).
-        outline_level:   Filter to a specific outline level (0 = all).
-        keyword:         Filter tasks whose name contains this string (case-insensitive).
+    List tasks from the active project.
+    
+    include_summary adds parent rows. outline_level 0 means every level.
+    keyword matches the name, case-insensitively.
+    Capped at 200 tasks; the response says the total and how to page.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -79,8 +82,9 @@ def get_tasks(
             continue
         results.append(tarefa_completa(v))
 
-    return json.dumps({"count": len(results), "source": origem,
-                       "tasks": results}, indent=2)
+    fatia, pagina = recortar([enxugar(t) for t in results])
+    return responder({"count": len(results), "source": origem,
+                      "page": pagina, "tasks": fatia})
 
 
 @mcp.tool()
@@ -101,7 +105,7 @@ def get_task(unique_id: int) -> str:
         if v["unique_id"] == unique_id:
             saida = tarefa_completa(v)
             saida["source"] = origem
-            return json.dumps(saida, indent=2)
+            return responder(saida)
 
     return json.dumps({"error": f"Task UniqueID {unique_id} not found.",
                        "source": origem})
@@ -128,8 +132,9 @@ def get_tasks_by_rag(rag: str = "Red") -> str:
         if (v["text1"] or "").strip().lower() == alvo:
             results.append(tarefa_completa(v))
 
-    return json.dumps({"rag": rag, "count": len(results), "source": origem,
-                       "tasks": results}, indent=2)
+    fatia, pagina = recortar([enxugar(t) for t in results])
+    return responder({"rag": rag, "count": len(results), "source": origem,
+                      "page": pagina, "tasks": fatia})
 
 
 @mcp.tool()
@@ -153,8 +158,9 @@ def get_overdue_tasks() -> str:
         if finish and finish < today:
             results.append(tarefa_completa(v))
 
-    return json.dumps({"count": len(results), "source": origem,
-                       "tasks": results}, indent=2)
+    fatia, pagina = recortar([enxugar(t) for t in results])
+    return responder({"count": len(results), "source": origem,
+                      "page": pagina, "tasks": fatia})
 
 
 @mcp.tool()
@@ -175,12 +181,14 @@ def get_tasks_by_resource(resource_name: str) -> str:
         if name_lower in (v["resource_names"] or "").lower():
             results.append(tarefa_completa(v))
 
-    return json.dumps({
+    fatia, pagina = recortar([enxugar(t) for t in results])
+    return responder({
         "resource": resource_name,
         "count":    len(results),
         "source":   origem,
-        "tasks":    results,
-    }, indent=2)
+        "page":     pagina,
+        "tasks":    fatia,
+    })
 
 
 @mcp.tool()
@@ -239,7 +247,7 @@ def get_progress_summary() -> str:
 
     total = not_started + in_progress + complete
 
-    return json.dumps({
+    return responder({
         "project":     proj.Name,
         "source":      origem,
         "total_tasks": total,
@@ -252,17 +260,17 @@ def get_progress_summary() -> str:
         "by_rag": rag_counts,
         "overdue":   overdue,
         "critical":  critical,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
-def get_wbs_structure(max_level: int = 0) -> str:
+def get_wbs_structure(max_level: int = 3) -> str:
     """
-    Export the full WBS hierarchy as a nested JSON tree.
-    Useful for dashboards, reporting, and verifying project structure.
-
-    Args:
-        max_level: Maximum outline level to include (0 = all levels).
+    The WBS hierarchy as a nested tree.
+    
+    max_level is the deepest outline level included; 0 means every level.
+    Defaults to 3 because a real schedule keeps thousands of detail tasks below
+    that, and the whole tree runs to megabytes.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -275,8 +283,10 @@ def get_wbs_structure(max_level: int = 0) -> str:
     # is built by walking this list against a stack of parents -- which is why
     # the fast path sorts by ID before returning, the order COM enumerates in.
     flat = []
+    cortados = 0
     for v in fonte:
         if max_level > 0 and v["outline_level"] > max_level:
+            cortados += 1
             continue
         flat.append({
             "unique_id":     v["unique_id"],
@@ -305,22 +315,28 @@ def get_wbs_structure(max_level: int = 0) -> str:
         # Push this node as potential parent
         stack.append(node)
 
-    return json.dumps(root, indent=2)
+    root["nodes"] = len(flat)
+    if cortados:
+        # A tree cut at a level looks complete: every branch it shows is whole,
+        # and nothing in the shape says the leaves are missing.
+        root["warning"] = ("%d tasks below outline level %d are not in this "
+                           "tree. Raise max_level, or pass 0 for every level "
+                           "-- the full tree of a large schedule is megabytes."
+                           % (cortados, max_level))
+    return responder(root)
 
 
 @mcp.tool()
 def filter_tasks(filters_json: str) -> str:
     """
-    Powerful AND-logic filtering across all task fields with sort and pagination.
-
-    Args:
-        filters_json: JSON string with filter keys (all optional):
-            rag, resource, start_after, start_before, finish_after, finish_before,
-            min_pct, max_pct, outline_level, critical (bool), milestone (bool),
-            active (bool), summary (bool), name_contains,
-            text1, text2, text3, flag1 (bool), flag2 (bool),
-            sort_by (field name), sort_desc (bool), limit (int), offset (int).
-            Example: '{"rag": "Red", "critical": true, "limit": 20}'
+    Filter tasks on any field with AND logic, then sort and paginate.
+    
+    filters_json: JSON object, all keys optional -- rag, resource, start_after,
+    start_before, finish_after, finish_before (YYYY-MM-DD), min_pct, max_pct,
+    outline_level, critical, milestone, active, summary, name_contains, text1,
+    text2, text3, flag1, flag2, sort_by, sort_desc, limit, offset.
+    limit defaults to 200; pass -1 for every match in one response.
+    Example: '{"rag":"Red","critical":true,"limit":20}'
     """
     f = json.loads(filters_json)
     app  = get_app()
@@ -401,35 +417,33 @@ def filter_tasks(filters_json: str) -> str:
             pass
 
     total = len(matched)
-    offset = f.get("offset", 0)
-    limit  = f.get("limit", 0)
-    if offset > 0:
-        matched = matched[offset:]
-    if limit > 0:
-        matched = matched[:limit]
+    # This is the uncapped door: limit=-1 returns everything, and the caller
+    # asking for it has said so. Everywhere else a listing stops at
+    # LIMITE_PADRAO, because a response nobody can read is not an answer.
+    fatia, pagina = recortar([enxugar(t) for t in matched],
+                             limite=f.get("limit", LIMITE_PADRAO),
+                             offset=f.get("offset", 0))
 
-    return json.dumps({
+    return responder({
         "total_matching": total,
-        "returned":       len(matched),
-        "offset":         offset,
-        "limit":          limit or total,
+        "returned":       len(fatia),
+        "offset":         pagina["offset"],
+        "limit":          f.get("limit", LIMITE_PADRAO),
         "source":         origem,
-        "tasks":          matched,
-    }, indent=2)
+        "page":           pagina,
+        "tasks":          fatia,
+    })
 
 
 @mcp.tool()
 def group_tasks_by(field: str, include_tasks: bool = False) -> str:
     """
-    Group non-summary tasks by a field and return counts per group.
-
-    Args:
-        field:         Field to group by: 'rag', 'resource', 'outline_level', 'critical',
-                       'milestone', 'percent_complete', 'text1', 'text2', 'text3',
-                       'flag1', 'flag2'. Any other name is looked up among the
-                       fields a task is published with (the keys get_task
-                       returns), and yields '(unknown)' when there is none.
-        include_tasks: If true, include task list per group (default false).
+    Group non-summary tasks by a field and count each group.
+    
+    field: 'rag', 'resource', 'outline_level', 'critical', 'milestone',
+    'percent_complete', 'text1'-'text3', 'flag1', 'flag2'. Any other name is
+    looked up among the fields get_task publishes, and yields '(unknown)'.
+    include_tasks adds each group's tasks, capped per group.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -446,7 +460,7 @@ def group_tasks_by(field: str, include_tasks: bool = False) -> str:
             continue
         total += 1
 
-        td = tarefa_completa(v) if include_tasks else None
+        td = enxugar(tarefa_completa(v)) if include_tasks else None
 
         if field == "resource":
             # Split comma-separated resource names
@@ -498,24 +512,30 @@ def group_tasks_by(field: str, include_tasks: bool = False) -> str:
 
     result = sorted(groups.values(), key=lambda g: g["count"], reverse=True)
 
-    return json.dumps({
+    # A group can hold every task in the project, so include_tasks=True is the
+    # same payload as get_tasks with extra nesting. Each group's list is capped
+    # on its own; the counts above it are always complete.
+    if include_tasks:
+        for g in result:
+            fatia, pagina = recortar(g["tasks"])
+            g["tasks"] = fatia
+            g["page"] = pagina
+
+    return responder({
         "field":       field,
         "source":      origem,
         "groups":      result,
         "total_tasks": total,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def get_milestone_report(days_ahead: int = 30, upcoming_count: int = 10) -> str:
     """
-    Milestone-focused status report for executive dashboards.
-    Categorizes milestones as complete, overdue, at_risk, or on_track.
-    Includes baseline variance if a baseline is saved.
-
-    Args:
-        days_ahead:     Number of days ahead to consider 'at risk' (default 30).
-        upcoming_count: Max upcoming milestones to return (default 10).
+    Milestones grouped as complete, overdue, at_risk or on_track.
+    
+    days_ahead is the at-risk horizon (default 30). upcoming_count caps the
+    upcoming list. Includes baseline variance when a baseline is saved.
     """
     app   = get_app()
     proj  = get_proj(app)
@@ -575,12 +595,14 @@ def get_milestone_report(days_ahead: int = 30, upcoming_count: int = 10) -> str:
     upcoming.sort(key=lambda x: x["finish"] or "")
     overdue.sort(key=lambda x: x["finish"] or "")
 
-    return json.dumps({
+    atrasados, pagina = recortar(overdue)
+    return responder({
         "total_milestones": total,
         "by_status":        by_status,
         "upcoming":         upcoming[:upcoming_count],
-        "overdue":          overdue,
-    }, indent=2)
+        "overdue_page":     pagina,
+        "overdue":          atrasados,
+    })
 
 
 @mcp.tool()
@@ -637,23 +659,23 @@ def get_progress_by_wbs(max_level: int = 2) -> str:
             "milestones_total":   milestones_total,
         })
 
-    return json.dumps({
+    fatia, pagina = recortar(branches)
+    return responder({
         "max_level": max_level,
         "source":    origem,
-        "branches":  branches,
-    }, indent=2)
+        "page":      pagina,
+        "branches":  fatia,
+    })
 
 
 @mcp.tool()
 def export_csv(output_path: str, columns_json: str = "", filters_json: str = "") -> str:
     """
-    Export filtered task data to CSV for PowerBI / Excel dashboards.
-
-    Args:
-        output_path:  Full path for the output CSV file (required).
-        columns_json: JSON list of column names to include (optional, default: standard set).
-                      Available: any key from task_to_dict output.
-        filters_json: JSON object with filter criteria (same format as filter_tasks).
+    Write filtered tasks to a CSV file -- the uncapped door for a whole schedule.
+    
+    output_path is a path on the machine running Microsoft Project.
+    columns_json: JSON list of field names from get_task's output.
+    filters_json: same object filter_tasks takes.
     """
     import csv
 
@@ -690,13 +712,13 @@ def export_csv(output_path: str, columns_json: str = "", filters_json: str = "")
             row = [task.get(col, "") for col in columns]
             writer.writerow(row)
 
-    return json.dumps({
+    return responder({
         "status":  "exported",
         "path":    output_path,
         "rows":    len(tasks),
         "columns": columns,
         "source":  origem,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -715,10 +737,10 @@ def apply_filter(filter_name: str) -> str:
     except Exception as e:
         return json.dumps({"error": f"Failed to apply filter '{filter_name}': {e}"})
 
-    return json.dumps({
+    return responder({
         "status": "applied",
         "filter": filter_name,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -748,8 +770,9 @@ def get_constraints() -> str:
                 "constraint_date": _dia(v["constraint_date"]),
             })
 
-    return json.dumps({"count": len(results), "source": origem,
-                       "tasks": results}, indent=2)
+    fatia, pagina = recortar(results)
+    return responder({"count": len(results), "source": origem,
+                      "page": pagina, "tasks": fatia})
 
 
 @mcp.tool()
@@ -789,7 +812,8 @@ def get_actual_work() -> str:
 
     pct = round(total_actual / total_work * 100, 1) if total_work else 0.0
 
-    return json.dumps({
+    fatia, pagina = recortar(tasks)
+    return responder({
         "totals": {
             "work_hours":        round(total_work, 2),
             "actual_hours":      round(total_actual, 2),
@@ -797,8 +821,9 @@ def get_actual_work() -> str:
             "pct_work_complete": pct,
         },
         "count": len(tasks),
-        "tasks": tasks,
-    }, indent=2)
+        "page":  pagina,
+        "tasks": fatia,
+    })
 
 
 @mcp.tool()
@@ -810,16 +835,12 @@ def get_timephased_data(
     data_type:  str = "work",
 ) -> str:
     """
-    Get period-by-period timephased data for a task. Essential for S-curves,
-    resource loading charts, and cash flow forecasts.
-
-    Args:
-        unique_id:  Task UniqueID.
-        start_date: Period start as YYYY-MM-DD.
-        end_date:   Period end as YYYY-MM-DD.
-        timescale:  'daily', 'weekly', or 'monthly' (default 'weekly').
-        data_type:  'work', 'cost', 'actual_work', 'actual_cost',
-                    'remaining_work', 'baseline_work', 'baseline_cost' (default 'work').
+    Period-by-period values for one task -- S-curves, loading, cash flow.
+    
+    Dates YYYY-MM-DD. timescale: 'daily', 'weekly' (default) or 'monthly'.
+    data_type: 'work' (default), 'cost', 'actual_work', 'actual_cost',
+    'remaining_work', 'baseline_work', 'baseline_cost'.
+    Slow over long ranges -- query weeks or months, not years.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -860,10 +881,10 @@ def get_timephased_data(
     except Exception as e:
         return json.dumps({"error": f"TimeScaleData failed: {e}"})
 
-    return json.dumps({
+    return responder({
         "unique_id": unique_id,
         "name":      t.Name,
         "data_type": data_type,
         "timescale": timescale,
         "periods":   periods,
-    }, indent=2)
+    })

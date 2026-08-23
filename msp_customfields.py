@@ -12,6 +12,7 @@ domain.
 import json
 
 from msp_core import (
+    responder,
     mcp,
     get_app,
     get_proj,
@@ -25,13 +26,11 @@ from msp_core import (
 @mcp.tool()
 def rename_custom_fields(fields_json: str) -> str:
     """
-    Rename custom text fields (Text1-Text30) to meaningful labels.
-    Uses the MS Project CustomFieldRename method.
-
-    Args:
-        fields_json: JSON string — object mapping field names to display names.
-            Example: '{"text1": "RAG Status", "text2": "Technology Required"}'
-            Supported fields: text1-text30.
+    Give custom text fields display labels in the Microsoft Project UI.
+    
+    fields_json: JSON object mapping text1-text30 to labels.
+    Example: '{"text1":"RAG Status","text2":"Technology"}'
+    Does NOT save -- call save_project if it must persist.
     """
     fields = json.loads(fields_json)
     app    = get_app()
@@ -60,19 +59,18 @@ def rename_custom_fields(fields_json: str) -> str:
     except Exception:
         pass
 
-    return json.dumps({"renamed": len([r for r in renamed if "error" not in r]),
-                       "results": renamed}, indent=2)
+    return responder({"renamed": len([r for r in renamed if "error" not in r]),
+                       "results": renamed})
 
 
 @mcp.tool()
 def update_custom_fields(unique_id: int, fields_json: str) -> str:
     """
-    Write any custom field on a task: Text1-30, Number1-20, Date1-10, Flag1-20, Duration1-10.
-
-    Args:
-        unique_id:   Task UniqueID (required).
-        fields_json: JSON object mapping field names to values.
-                     Example: '{"Text5": "Phase A", "Number1": 42, "Flag3": true, "Date1": "2026-06-01"}'
+    Write custom fields on one task.
+    
+    fields_json: JSON object. Field names Text1-30, Number1-20, Date1-10 (values
+    YYYY-MM-DD), Flag1-20 (bool), Duration1-10 (days).
+    Example: '{"Text5":"Phase A","Number1":42,"Flag3":true,"Date1":"2026-06-01"}'
     """
     fields = json.loads(fields_json)
     app    = get_app()
@@ -111,13 +109,13 @@ def update_custom_fields(unique_id: int, fields_json: str) -> str:
             errors.append({"field": field_name, "error": str(e)})
 
     app.FileSave()
-    return json.dumps({
+    return responder({
         "status":    "updated",
         "unique_id": unique_id,
         "name":      t.Name,
         "changed":   changed,
         "errors":    errors,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -160,9 +158,9 @@ def get_custom_field_values(field_name: str) -> str:
 
     unique_values = sorted(value_counts.keys())
 
-    return json.dumps({
+    return responder({
         "field":         field_name,
         "unique_values": unique_values,
         "value_counts":  value_counts,
         "total_tasks":   total,
-    }, indent=2)
+    })

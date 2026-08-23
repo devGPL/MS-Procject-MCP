@@ -27,6 +27,7 @@ finally. Each pair is wholly inside one function; never slice one apart.
 import json
 
 from msp_core import (
+    responder,
     calculo_suspenso,
     _uid_map,
     mcp,
@@ -58,25 +59,14 @@ def update_task(
     task_type:        str = "",
 ) -> str:
     """
-    Update one or more properties of a task identified by UniqueID.
-    Only the fields you provide are changed.
-
-    Args:
-        unique_id:        Task UniqueID (required).
-        name:             New task name.
-        percent_complete: 0-100.
-        notes:            Free-text notes.
-        start:            Start date as YYYY-MM-DD.
-        finish:           Finish date as YYYY-MM-DD.
-        duration_days:    Duration in working days (0+ to set).
-        manual:           True for manually scheduled, False for auto-scheduled.
-        rag:              RAG status: 'Red', 'Amber', or 'Green' (stored in Text1).
-        text2:            Custom Text2 field.
-        text3:            Custom Text3 field.
-        flag1:            Custom Flag1 boolean.
-        flag2:            Custom Flag2 boolean.
-        priority:         Leveling priority 0-1000 (default 500). 0+ to set.
-        task_type:        'FixedUnits', 'FixedDuration', or 'FixedWork'.
+    Update a task by UniqueID. Only the arguments you pass are changed.
+    
+    Sentinels mean "leave alone": -1 for numbers, "" for strings, None for bools --
+    so these cannot set a field to 0, "" or False.
+    Dates YYYY-MM-DD. percent_complete 0-100. duration_days in working days.
+    priority 0-1000. rag: 'Red'/'Amber'/'Green' (stored in Text1).
+    task_type: 'FixedUnits', 'FixedDuration' or 'FixedWork'.
+    manual: True = manually scheduled, False = auto.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -120,12 +110,12 @@ def update_task(
                 t.Type = tt;            changed.append("type")
 
         app.FileSave()
-        return json.dumps({
+        return responder({
             "status":   "updated",
             "unique_id": unique_id,
             "name":     t.Name,
             "changed":  changed,
-        }, indent=2)
+        })
 
     return json.dumps({"error": f"Task UniqueID {unique_id} not found."})
 
@@ -157,20 +147,19 @@ def bulk_update_rag(updates: str) -> str:
                 results.append({"unique_id": uid, "status": "not_found"})
 
     app.FileSave()
-    return json.dumps({"updated": len([r for r in results if r["status"] == "updated"]),
-                       "results": results}, indent=2)
+    return responder({"updated": len([r for r in results if r["status"] == "updated"]),
+                       "results": results})
 
 
 @mcp.tool()
 def bulk_update_tasks(updates_json: str) -> str:
     """
-    Update multiple tasks in one call. Suspends auto-calc for performance.
-
-    Args:
-        updates_json: JSON string — list of objects with fields:
-            unique_id (required), name, start, finish, duration_days,
-            percent_complete, rag, text2, text3, notes, manual (bool).
-            Example: '[{"unique_id": 42, "rag": "Red", "percent_complete": 50}]'
+    Update many tasks in one call, with auto-calculation suspended.
+    
+    updates_json: JSON list of objects, each with unique_id plus any of name,
+    percent_complete, start, finish (YYYY-MM-DD), duration_days, notes, rag,
+    text2, text3, flag1, flag2, priority, manual.
+    Example: '[{"unique_id":12,"percent_complete":50,"rag":"Amber"}]'
     """
     items = json.loads(updates_json)
     app   = get_app()
@@ -217,10 +206,10 @@ def bulk_update_tasks(updates_json: str) -> str:
         app.Calculation = -1
 
     app.FileSave()
-    return json.dumps({
+    return responder({
         "updated":   updated,
         "not_found": not_found,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -237,19 +226,11 @@ def add_task(
     after_unique_id: int = 0,
 ) -> str:
     """
-    Add a new task to the active project.
-
-    Args:
-        name:            Task name (required).
-        outline_level:   WBS level (1 = top-level, 2 = sub-task, etc.).
-        start:           Start date YYYY-MM-DD (optional).
-        finish:          Finish date YYYY-MM-DD (optional).
-        duration_days:   Duration in days (default 1).
-        milestone:       True to create as a milestone.
-        notes:           Free-text notes.
-        resource:        Resource name to assign.
-        rag:             RAG status stored in Text1.
-        after_unique_id: Insert after this task's UniqueID (0 = append at end).
+    Add a task to the active project.
+    
+    outline_level is the WBS depth (1 = top level). Dates YYYY-MM-DD, empty for
+    none. duration_days in working days. rag is stored in Text1.
+    after_unique_id is accepted and IGNORED -- tasks always append at the end.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -282,28 +263,24 @@ def add_task(
         app.Calculation = -1
 
     app.FileSave()
-    return json.dumps({
+    return responder({
         "status":    "created",
         "unique_id": task.UniqueID,
         "id":        task.ID,
         "name":      task.Name,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def bulk_add_tasks(tasks_json: str) -> str:
     """
-    Add multiple tasks in one call. Critical for roadmap generation.
-    Suspends auto-calc for performance. Tasks are added sequentially;
-    outline_level controls WBS hierarchy.
-
-    Args:
-        tasks_json: JSON string — list of task objects with fields:
-            name (required), outline_level (default 1), start, finish,
-            duration_days (default 1), milestone (bool), resource,
-            rag, text2, text3, notes, manual (bool).
-            Example: '[{"name": "Phase 1", "outline_level": 1},
-                       {"name": "Task A", "outline_level": 2, "start": "2026-04-01"}]'
+    Add many tasks in one call, in order, with auto-calculation suspended.
+    
+    tasks_json: JSON list of objects. Fields: name (required), outline_level
+    (default 1), start, finish (YYYY-MM-DD), duration_days, milestone, resource,
+    rag, text2, text3, notes, manual.
+    Example: '[{"name":"Phase 1","outline_level":1},{"name":"Task A",
+    "outline_level":2,"start":"2026-04-01"}]'
     """
     tasks = json.loads(tasks_json)
     app   = get_app()
@@ -352,10 +329,10 @@ def bulk_add_tasks(tasks_json: str) -> str:
         app.Calculation = -1
 
     app.FileSave()
-    return json.dumps({
+    return responder({
         "created": len(created),
         "tasks":   created,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -371,11 +348,11 @@ def delete_task(unique_id: int) -> str:
             app.SelectRow(task_id, False)
             app.EditDelete()
             app.FileSave()
-            return json.dumps({
+            return responder({
                 "status":    "deleted",
                 "unique_id": unique_id,
                 "name":      task_name,
-            }, indent=2)
+            })
 
     return json.dumps({"error": f"Task UniqueID {unique_id} not found."})
 
@@ -396,12 +373,12 @@ def set_task_mode(unique_id: int, manual: bool = True) -> str:
         if t is not None and t.UniqueID == unique_id:
             t.Manual = manual
             app.FileSave()
-            return json.dumps({
+            return responder({
                 "status":    "updated",
                 "unique_id": unique_id,
                 "name":      t.Name,
                 "manual":    manual,
-            }, indent=2)
+            })
 
     return json.dumps({"error": f"Task UniqueID {unique_id} not found."})
 
@@ -409,16 +386,13 @@ def set_task_mode(unique_id: int, manual: bool = True) -> str:
 @mcp.tool()
 def bulk_set_task_mode(updates_json: str) -> str:
     """
-    Set manual/auto schedule mode for multiple tasks, or by scope.
-
-    Args:
-        updates_json: JSON string — EITHER:
-            A list of {unique_id, manual} objects:
-              '[{"unique_id": 42, "manual": true}]'
-            OR a scope object:
-              '{"mode": "manual", "scope": "all"}'
-              '{"mode": "auto", "scope": "summary"}'
-              '{"mode": "manual", "scope": "non_summary"}'
+    Switch tasks between manual and automatic scheduling in one call.
+    
+    updates_json: either a JSON list of {"unique_id":N,"manual":bool}, or a scope
+    object -- {"manual":false,"all":true} for every task, or
+    {"manual":false,"outline_level":4} for one level.
+    Converting a large schedule to automatic reschedules the whole network: dates
+    WILL move.
     """
     data = json.loads(updates_json)
     app  = get_app()
@@ -452,18 +426,16 @@ def bulk_set_task_mode(updates_json: str) -> str:
                     updated += 1
 
     app.FileSave()
-    return json.dumps({"updated": updated}, indent=2)
+    return responder({"updated": updated})
 
 
 @mcp.tool()
 def set_constraint(unique_id: int, constraint_type: str = "SNET", constraint_date: str = "") -> str:
     """
     Set a scheduling constraint on a task.
-
-    Args:
-        unique_id:       Task UniqueID (required).
-        constraint_type: One of: ASAP, ALAP, MSO, MFO, SNET, SNLT, FNET, FNLT (default SNET).
-        constraint_date: Date as YYYY-MM-DD (required for all types except ASAP/ALAP).
+    
+    constraint_type: ASAP, ALAP, MSO, MFO, SNET (default), SNLT, FNET, FNLT.
+    constraint_date YYYY-MM-DD, required for every type except ASAP and ALAP.
     """
     CONSTRAINT_MAP = {
         "ASAP": 0, "ALAP": 1, "MSO": 2, "MFO": 3,
@@ -483,13 +455,13 @@ def set_constraint(unique_id: int, constraint_type: str = "SNET", constraint_dat
             if constraint_date and ct not in ("ASAP", "ALAP"):
                 t.ConstraintDate = _parse_date(constraint_date)
             app.FileSave()
-            return json.dumps({
+            return responder({
                 "status":          "updated",
                 "unique_id":       unique_id,
                 "name":            t.Name,
                 "constraint_type": ct,
                 "constraint_date": constraint_date or "N/A",
-            }, indent=2)
+            })
 
     return json.dumps({"error": f"Task UniqueID {unique_id} not found."})
 
@@ -513,7 +485,7 @@ def clear_estimated_flags() -> str:
                 pass
 
     app.FileSave()
-    return json.dumps({"status": "cleared", "tasks_updated": count}, indent=2)
+    return responder({"status": "cleared", "tasks_updated": count})
 
 
 @mcp.tool()
@@ -537,13 +509,13 @@ def indent_task(unique_id: int, direction: str = "indent") -> str:
             else:
                 app.OutlineIndent()
             app.FileSave()
-            return json.dumps({
+            return responder({
                 "status":    "updated",
                 "unique_id": unique_id,
                 "name":      t.Name,
                 "old_level": old_level,
                 "new_level": t.OutlineLevel,
-            }, indent=2)
+            })
 
     return json.dumps({"error": f"Task UniqueID {unique_id} not found."})
 
@@ -551,12 +523,10 @@ def indent_task(unique_id: int, direction: str = "indent") -> str:
 @mcp.tool()
 def set_deadline(unique_id: int, deadline_date: str) -> str:
     """
-    Set a soft deadline on a task. Shows a visual indicator if finish > deadline.
-    Unlike hard constraints, deadlines don't affect scheduling.
-
-    Args:
-        unique_id:     Task UniqueID (required).
-        deadline_date: Deadline as YYYY-MM-DD, or 'clear' to remove.
+    Set a deadline on a task, or pass 'clear' to remove it.
+    
+    A deadline is an indicator, not a constraint: it flags a late finish and does
+    not move dates. deadline_date YYYY-MM-DD.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -568,12 +538,12 @@ def set_deadline(unique_id: int, deadline_date: str) -> str:
     if deadline_date.lower() == "clear":
         t.Deadline = "NA"
         app.FileSave()
-        return json.dumps({
+        return responder({
             "status":    "cleared",
             "unique_id": unique_id,
             "name":      t.Name,
             "deadline":  None,
-        }, indent=2)
+        })
 
     dl = _parse_date(deadline_date)
     t.Deadline = dl
@@ -586,14 +556,14 @@ def set_deadline(unique_id: int, deadline_date: str) -> str:
     except Exception:
         pass
 
-    return json.dumps({
+    return responder({
         "status":          "set",
         "unique_id":       unique_id,
         "name":            t.Name,
         "deadline":        deadline_date,
         "finish":          _fmt_date(t.Finish),
         "deadline_missed": deadline_missed,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -616,25 +586,21 @@ def set_task_active(unique_id: int, active: bool = True) -> str:
     t.Active = active
     app.FileSave()
 
-    return json.dumps({
+    return responder({
         "status":    "updated",
         "unique_id": unique_id,
         "name":      t.Name,
         "active":    active,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def dry_run_bulk_update(updates_json: str) -> str:
     """
-    Preview bulk changes without modifying anything — the enterprise safety net.
-    Shows what would change for each task without actually applying updates.
-
-    Args:
-        updates_json: JSON string — list of objects with fields:
-            unique_id (required), name, start, finish, duration_days,
-            percent_complete, rag, text2, text3, notes.
-            Same format as bulk_update_tasks.
+    Preview what bulk_update_tasks would change. Mutates nothing.
+    
+    updates_json takes the same shape bulk_update_tasks does: a JSON list of
+    objects, each with unique_id plus the fields to change.
     """
     items = json.loads(updates_json)
     app   = get_app()
@@ -705,14 +671,14 @@ def dry_run_bulk_update(updates_json: str) -> str:
 
     total_changes = sum(len(c["fields"]) for c in changes)
 
-    return json.dumps({
+    return responder({
         "preview":              True,
         "changes":              changes,
         "not_found":            not_found,
         "no_change":            no_change,
         "total_changes":        total_changes,
         "total_tasks_affected": len(changes),
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -760,13 +726,13 @@ def move_task(unique_id: int, after_unique_id: int) -> str:
     moved = _find_task(proj, unique_id)
     new_id = moved.ID if moved else None
 
-    return json.dumps({
+    return responder({
         "status":    "moved",
         "unique_id": unique_id,
         "name":      moved.Name if moved else "(unknown)",
         "old_id":    old_id,
         "new_id":    new_id,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -820,23 +786,22 @@ def copy_task_structure(source_unique_id: int, copies: int = 1) -> str:
                     "name":      t.Name,
                 })
 
-    return json.dumps({
+    return responder({
         "status":       "copied",
         "source_name":  source.Name,
         "copied_tasks": all_copied,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def bulk_set_deadlines(deadlines_json: str) -> str:
     """
-    Set deadlines on multiple tasks at once.
-
-    Args:
-        deadlines_json: JSON string — list of {unique_id, deadline_date}.
-            deadline_date can be 'clear' to remove the deadline.
-            Example: '[{"unique_id": 42, "deadline_date": "2026-06-01"},
-                       {"unique_id": 55, "deadline_date": "clear"}]'
+    Set deadlines on many tasks in one call.
+    
+    deadlines_json: JSON list of {"unique_id":N,"deadline":"YYYY-MM-DD"}.
+    An empty deadline clears it. A deadline is an indicator, not a constraint: it
+    does not move dates.
+    Does NOT save -- call save_project if it must persist.
     """
     items = json.loads(deadlines_json)
     app   = get_app()
@@ -875,24 +840,19 @@ def bulk_set_deadlines(deadlines_json: str) -> str:
     except Exception:
         pass
 
-    return json.dumps({
+    return responder({
         "set":       set_count,
         "cleared":   cleared,
         "not_found": not_found,
         "errors":    errors,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def set_task_hyperlink(unique_id: int, url: str, text: str = "", sub_address: str = "") -> str:
     """
-    Set a hyperlink on a task.
-
-    Args:
-        unique_id:   Task UniqueID.
-        url:         The hyperlink URL or file path.
-        text:        Display text for the hyperlink (optional).
-        sub_address: Sub-address / bookmark within the target (optional).
+    Set a hyperlink on a task. url may be a web address or a file path;
+    sub_address is a bookmark within the target.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -908,13 +868,13 @@ def set_task_hyperlink(unique_id: int, url: str, text: str = "", sub_address: st
         t.HyperlinkSubAddress = sub_address
 
     app.FileSave()
-    return json.dumps({
+    return responder({
         "status":    "updated",
         "unique_id": unique_id,
         "name":      t.Name,
         "hyperlink": url,
         "text":      text or url,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -927,15 +887,12 @@ def add_recurring_task(
     day_of_week:     int = 2,
 ) -> str:
     """
-    Add a recurring task to the project.
-
-    Args:
-        name:            Task name.
-        recurrence_type: 'daily', 'weekly', or 'monthly' (default 'weekly').
-        start_date:      Recurrence range start (YYYY-MM-DD).
-        end_date:        Recurrence range end (YYYY-MM-DD).
-        duration_days:   Duration of each occurrence in days (default 1).
-        day_of_week:     For weekly: 1=Sun, 2=Mon, ..., 7=Sat (default 2=Monday).
+    Create a summary task with one subtask per occurrence.
+    
+    Simulated rather than native: Microsoft Project's recurring-task API is
+    dialog-only. Requires python-dateutil.
+    Dates YYYY-MM-DD. pattern: 'daily', 'weekly' or 'monthly'.
+    weekday for weekly (0 = Monday), day_of_month for monthly.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -991,7 +948,7 @@ def add_recurring_task(
         app.CalculateProject()
         app.FileSave()
 
-        return json.dumps({
+        return responder({
             "status":          "created",
             "name":            name,
             "unique_id":       summary_uid,
@@ -999,7 +956,7 @@ def add_recurring_task(
             "occurrences":     len(dates),
             "start":           start_date,
             "end":             end_date,
-        }, indent=2)
+        })
 
     except ImportError:
         return json.dumps({"error": "python-dateutil is required for recurring tasks. Install with: pip install python-dateutil"})

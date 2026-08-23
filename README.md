@@ -326,6 +326,34 @@ A decisão é tomada **a cada chamada**, nunca uma vez na inicialização. Quand
 
 ---
 
+## Tamanho das respostas
+
+`get_tasks` num cronograma real devolvia **8,07 MB**. Não chega como lentidão — chega como conversa que acaba cedo.
+
+Medido ponta a ponta com 8.243 tarefas, servidor completo:
+
+| resposta | antes | depois |
+|---|---|---|
+| `get_tasks` | 7,46 MB | 81,5 KB |
+| `filter_tasks` | 7,66 MB | 81,7 KB |
+| `get_schedule_analysis` | 1,93 MB | 37,4 KB |
+| `get_wbs_structure` | 3,51 MB | 43,6 KB |
+| definições das 99 tools | 50,7 KB | 37,5 KB |
+
+Três decisões, nesta ordem de efeito:
+
+**Limite de 200 itens por listagem.** É o único corte que muda o resultado: compactar 64% de algo cem vezes maior que a janela ainda deixa algo inconsumível. A resposta traz `count`/`total` completos e um bloco `page` com `returned`, `offset` e como pedir o resto. Duas portas continuam sem teto: `filter_tasks` com `limit=-1`, e `export_csv`, que escreve arquivo em vez de resposta.
+
+**Campos vazios omitidos.** 57% dos valores de um cronograma real são vazios, zero ou `False`. **Chave ausente significa vazio, zero ou falso** — quem lia `task["notes"]` passa a precisar de `task.get("notes", "")`. Duas exceções: os campos que identificam a linha (`unique_id`, `id`, `name`) e os números onde zero é medição (`percent_complete`, `total_slack_days`, `free_slack_days`, `duration_days`, `outline_level`).
+
+**JSON compacto acima de 4 KB.** Abaixo disso continua indentado — resposta pequena é lida por gente.
+
+Nas definições das ferramentas, o `"title"` que o pydantic gera para cada parâmetro (`"title": "Unique Id"` ao lado de `unique_id`) foi removido: 8 KB, ~2,3k tokens, que todo cliente paga em toda sessão antes da primeira chamada. As descrições das 40 maiores foram reescritas para manter enums, formatos, unidades e sentinelas, e largar a prosa.
+
+`get_wbs_structure` passou a limitar em `max_level=3` por padrão, e diz quantas tarefas ficaram abaixo do corte. Passe `0` para a árvore inteira.
+
+---
+
 ## Limitações conhecidas
 
 - **Referências COM obsoletas** — com vários projetos abertos, trocar de projeto invalida as referências existentes. Chame `switch_project` antes de operar em outro arquivo.
@@ -354,11 +382,11 @@ python tests/test_phase7.py     # 45 verificações (caminho crítico, what-if)
 Duas suítes tratam dos dois caminhos de leitura:
 
 ```bash
-python tests/test_vistas_paridade.py  # 80 verificações — não precisa de Windows
+python tests/test_vistas_paridade.py  # 96 verificações — não precisa de Windows
 python tests/test_backend_parity.py   # exige Windows, MS Project e projeto SALVO
 ```
 
-`test_vistas_paridade.py` roda cada ferramenta convertida duas vezes sobre um projeto falso — uma forçada pelo COM, outra recebendo a lista já lida — e exige resposta idêntica. Verifica também que o caminho rápido não toca em nenhuma propriedade COM e que uma ferramenta que publica cinco campos não lê trinta e cinco. Ela prova que os dois **corpos** concordam; que o `mpxj` e o Microsoft Project leem o mesmo arquivo do mesmo jeito, só `test_backend_parity.py` prova — e essa nunca rodou, porque a VM de desenvolvimento é ARM64.
+`test_vistas_paridade.py` cobre também o corte de payload: que o limite vale, que campos vazios não são publicados, que zero permanece, que respostas grandes saem compactas e que nenhum schema publicado carrega `title`. Ela roda cada ferramenta convertida duas vezes sobre um projeto falso — uma forçada pelo COM, outra recebendo a lista já lida — e exige resposta idêntica. Verifica também que o caminho rápido não toca em nenhuma propriedade COM e que uma ferramenta que publica cinco campos não lê trinta e cinco. Ela prova que os dois **corpos** concordam; que o `mpxj` e o Microsoft Project leem o mesmo arquivo do mesmo jeito, só `test_backend_parity.py` prova — e essa nunca rodou, porque a VM de desenvolvimento é ARM64.
 
 Antes de qualquer commit, rode os portões — eles não precisam de Windows nem do MS Project:
 

@@ -13,6 +13,7 @@ result.
 import json
 
 from msp_core import (
+    responder,
     calculo_suspenso,
     _uid_map,
     _uid_to_id_map,
@@ -33,13 +34,11 @@ def add_predecessor(
     lag_days:              int = 0,
 ) -> str:
     """
-    Add a predecessor link between two tasks.
-
-    Args:
-        successor_unique_id:   The task that depends on the predecessor.
-        predecessor_unique_id: The task that must finish/start first.
-        link_type:             'FS' (default), 'SS', 'FF', or 'SF'.
-        lag_days:              Lag in days (positive = lag, negative = lead).
+    Link a predecessor to a task.
+    
+    link_type: 'FS' (default), 'SS', 'FF' or 'SF'. lag_days may be negative.
+    Both ids are UniqueIDs, not the row numbers that appear inside predecessor
+    strings.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -73,24 +72,22 @@ def add_predecessor(
         succ_task.Predecessors = new_pred
 
     app.FileSave()
-    return json.dumps({
+    return responder({
         "status":       "linked",
         "successor":    successor_unique_id,
         "predecessor":  predecessor_unique_id,
         "link":         new_pred,
         "predecessors": succ_task.Predecessors,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def bulk_add_predecessors(links_json: str) -> str:
     """
-    Add multiple predecessor links in one call.
-
-    Args:
-        links_json: JSON string — list of link objects:
-            [{successor_unique_id, predecessor_unique_id, link_type (default "FS"), lag_days (default 0)}]
-            Example: '[{"successor_unique_id": 10, "predecessor_unique_id": 5, "link_type": "FS"}]'
+    Add many predecessor links in one call.
+    
+    links_json: JSON list of {"successor_unique_id":N,"predecessor_unique_id":N,
+    "link_type":"FS","lag_days":0}. link_type: FS (default), SS, FF, SF.
     """
     links = json.loads(links_json)
     app   = get_app()
@@ -136,10 +133,10 @@ def bulk_add_predecessors(links_json: str) -> str:
             linked += 1
 
     app.FileSave()
-    return json.dumps({
+    return responder({
         "linked": linked,
         "errors": errors,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -172,12 +169,12 @@ def remove_predecessor(
     succ_task.Predecessors = ",".join(filtered)
 
     app.FileSave()
-    return json.dumps({
+    return responder({
         "status":              "unlinked",
         "successor":           successor_unique_id,
         "removed_predecessor": predecessor_unique_id,
         "predecessors_now":    succ_task.Predecessors,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -222,22 +219,20 @@ def get_task_dependencies(unique_id: int) -> str:
     except Exception:
         pass
 
-    return json.dumps({
+    return responder({
         "task":        {"unique_id": unique_id, "name": target.Name},
         "predecessors": preds,
         "successors":   succs,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def get_dependency_chain(unique_id: int, direction: str = "successors", max_depth: int = 50) -> str:
     """
-    Recursive walk of the dependency chain — 'what's downstream if this slips?'
-
-    Args:
-        unique_id: Starting task UniqueID (required).
-        direction: 'successors' (default) or 'predecessors'.
-        max_depth: Maximum depth to walk (default 50, safety cap).
+    Walk the dependency chain from a task -- what is downstream if this slips.
+    
+    direction: 'successors' (default) or 'predecessors'. max_depth caps the walk
+    (default 50).
     """
     app  = get_app()
     proj = get_proj(app)
@@ -289,9 +284,9 @@ def get_dependency_chain(unique_id: int, direction: str = "successors", max_dept
         except Exception:
             pass
 
-    return json.dumps({
+    return responder({
         "root":          {"unique_id": unique_id, "name": root.Name},
         "direction":     direction,
         "depth_reached": max(e["depth"] for e in chain) if chain else 0,
         "chain":         chain,
-    }, indent=2)
+    })

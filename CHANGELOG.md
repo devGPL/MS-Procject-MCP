@@ -4,6 +4,20 @@
 
 Modularização do servidor e as correções que ela tornou visíveis.
 
+### Tamanho das respostas
+
+**`get_tasks` devolvia 8,07 MB num cronograma real; passa a devolver ~82 KB.** Medido ponta a ponta com 8.243 tarefas: `filter_tasks` 7,66 MB → 81,7 KB, `get_schedule_analysis` 1,93 MB → 37,4 KB, `get_wbs_structure` 3,51 MB → 43,6 KB.
+
+Três mudanças de comportamento, todas visíveis para quem consome as respostas:
+
+- **Listagens param em 200 itens.** `count` e `total` continuam completos; um bloco `page` traz `returned`, `offset` e como pedir o resto. Sem teto: `filter_tasks` com `limit=-1` (o default de `limit` passou de "tudo" para 200) e `export_csv`, que escreve arquivo.
+- **Campos vazios não são publicados.** Chave ausente significa vazio, zero ou falso. Preservados: `unique_id`, `id`, `name`, e os números onde zero é medição (`percent_complete`, `total_slack_days`, `free_slack_days`, `duration_days`, `outline_level`).
+- **`get_wbs_structure` passa a cortar em `max_level=3`** por padrão, dizendo quantas tarefas ficaram de fora. `0` devolve a árvore inteira.
+
+Respostas acima de 4 KB saem em JSON compacto; abaixo disso seguem indentadas.
+
+**As definições das 99 ferramentas caíram de 50,7 KB para 37,5 KB** (~14,4k → ~10,7k tokens), custo que todo cliente paga em toda sessão antes da primeira chamada: o `"title"` que o pydantic gera para cada parâmetro saiu do schema publicado (8 KB), e as descrições das 40 maiores foram reescritas mantendo enums, formatos, unidades e sentinelas.
+
 ### Leitura
 
 **Quatorze ferramentas de leitura passam a responder do arquivo salvo quando podem.** Antes só `get_critical_path` fazia isso. Agora também `get_tasks`, `get_task`, `search_tasks`, `get_tasks_by_rag`, `get_overdue_tasks`, `get_tasks_by_resource`, `get_progress_summary`, `get_wbs_structure`, `filter_tasks`, `group_tasks_by`, `get_progress_by_wbs`, `get_constraints`, `export_csv`, `get_schedule_analysis` e `find_available_slack`. Toda resposta ganha um bloco `source` dizendo qual caminho respondeu e por quê — e um `warning` quando o MS Project reporta alterações não salvas. Requer `pip install -e ".[fast]"`; sem isso, ou em Windows ARM64, tudo cai no COM e o `source` explica.

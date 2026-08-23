@@ -20,6 +20,7 @@ carries it; it must never be sliced apart.
 import json
 
 from msp_core import (
+    responder,
     _uid_map,
     _find_resource,
     TIMESCALE_MAP,
@@ -52,7 +53,7 @@ def get_resources() -> str:
                 "task_count": r.Assignments.Count,
             })
 
-    return json.dumps({"count": len(results), "resources": results}, indent=2)
+    return responder({"count": len(results), "resources": results})
 
 
 @mcp.tool()
@@ -64,14 +65,11 @@ def add_resource(
     cost_per_use:  float = 0.0,
 ) -> str:
     """
-    Add a resource to the project resource pool.
-
-    Args:
-        name:          Resource name (required).
-        type:          0=Work (default), 1=Material, 2=Cost.
-        max_units:     Maximum allocation units (default 1.0 = 100%).
-        standard_rate: Standard rate as string (e.g. "50/h", "100/d").
-        cost_per_use:  Fixed cost per use (default 0).
+    Add a resource to the pool.
+    
+    type: 0 = Work (default), 1 = Material, 2 = Cost.
+    max_units 1.0 = 100%, and applies to Work resources only.
+    Rates as strings: '50/h', '400/d'.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -86,26 +84,24 @@ def add_resource(
         r.CostPerUse = cost_per_use
 
     app.FileSave()
-    return json.dumps({
+    return responder({
         "status":    "created",
         "unique_id": r.UniqueID,
         "id":        r.ID,
         "name":      r.Name,
         "type":      r.Type,
         "max_units": r.MaxUnits,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def assign_resource(task_unique_id: int, resource_name: str, units: float = 1.0) -> str:
     """
-    Assign a resource to a task. If the resource doesn't exist, it is created.
-    If the task already has resources, the new one is appended.
-
-    Args:
-        task_unique_id: Task UniqueID (required).
-        resource_name:  Resource name to assign (required).
-        units:          Allocation units, e.g. 1.0 = 100% (default 1.0).
+    Assign a resource to a task, creating the resource if it does not exist.
+    Appends to whatever the task already has.
+    
+    The `units` argument is accepted and IGNORED -- the assignment is always made
+    at the resource's default units.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -135,25 +131,22 @@ def assign_resource(task_unique_id: int, resource_name: str, units: float = 1.0)
         task.ResourceNames = resource_name
 
     app.FileSave()
-    return json.dumps({
+    return responder({
         "status":         "assigned",
         "task_unique_id": task_unique_id,
         "task_name":      task.Name,
         "resource_name":  resource_name,
         "resource_names": task.ResourceNames,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def get_resource_workload(resource_name: str, start_date: str = "", end_date: str = "") -> str:
     """
-    Resource allocation view with conflict detection.
-    Shows all assignments for a resource and identifies overlapping assignments.
-
-    Args:
-        resource_name: Resource name (case-insensitive exact match).
-        start_date:    Filter assignments starting after this date (YYYY-MM-DD, optional).
-        end_date:      Filter assignments ending before this date (YYYY-MM-DD, optional).
+    Assigned work per resource, with over-allocation flagged.
+    
+    Work is reported in hours. threshold_hours is the weekly ceiling above which
+    a resource counts as over-allocated (default 40).
     """
     app  = get_app()
     proj = get_proj(app)
@@ -232,24 +225,23 @@ def get_resource_workload(resource_name: str, start_date: str = "", end_date: st
     except Exception:
         pass
 
-    return json.dumps({
+    return responder({
         "resource":      resource.Name,
         "overallocated": overallocated,
         "max_units":     max_units,
         "assignments":   assignments,
         "conflicts":     conflicts,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def bulk_assign_resources(assignments_json: str) -> str:
     """
-    Assign resources to multiple tasks in one call.
-
-    Args:
-        assignments_json: JSON string — list of {task_unique_id, resource_name, units (optional)}.
-            Example: '[{"task_unique_id": 42, "resource_name": "Alice"},
-                       {"task_unique_id": 55, "resource_name": "Bob", "units": 0.5}]'
+    Assign resources to many tasks in one call.
+    
+    assignments_json: JSON list of {"task_unique_id":N,"resource_name":"..."}.
+    A `units` key is accepted and IGNORED.
+    Does NOT save -- call save_project if it must persist.
     """
     items = json.loads(assignments_json)
     app   = get_app()
@@ -302,11 +294,11 @@ def bulk_assign_resources(assignments_json: str) -> str:
     except Exception:
         pass
 
-    return json.dumps({
+    return responder({
         "assigned":          assigned,
         "errors":            errors,
         "created_resources": created_resources,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -342,25 +334,22 @@ def remove_resource_assignment(task_unique_id: int, resource_name: str) -> str:
     except Exception:
         pass
 
-    return json.dumps({
+    return responder({
         "status":           "removed",
         "task_name":        t.Name,
         "removed":          resource_name,
         "resource_names_now": t.ResourceNames,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def update_resource(resource_name: str, new_name: str = "", max_units: float = -1, standard_rate: str = "", cost_per_use: float = -1) -> str:
     """
-    Modify an existing resource's properties.
-
-    Args:
-        resource_name: Current resource name (required, case-insensitive).
-        new_name:      New name for the resource (optional).
-        max_units:     Maximum allocation units, e.g. 2.0 = 200% (optional, -1 = no change).
-        standard_rate: Standard rate as string, e.g. '50/h' (optional).
-        cost_per_use:  Fixed cost per use (optional, -1 = no change).
+    Update a resource by name. Only the arguments you pass are changed.
+    
+    Sentinels mean "leave alone": -1 for numbers, "" for strings.
+    max_units 1.0 = 100%. Rates as strings: '50/h', '400/d'.
+    Does NOT save -- call save_project if it must persist.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -391,11 +380,11 @@ def update_resource(resource_name: str, new_name: str = "", max_units: float = -
     except Exception:
         pass
 
-    return json.dumps({
+    return responder({
         "status":  "updated",
         "name":    resource.Name,
         "changed": changed,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -429,11 +418,11 @@ def delete_resource(resource_name: str) -> str:
         return json.dumps({"error": f"Failed to delete resource: {e}"})
 
     app.FileSave()
-    return json.dumps({
+    return responder({
         "status":              "deleted",
         "name":                name,
         "assignments_cleared": assignments_cleared,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -444,14 +433,10 @@ def get_resource_availability(
     timescale:     str = "weekly",
 ) -> str:
     """
-    Show resource allocation vs capacity per period. Shows max units, allocated
-    work, and free capacity windows.
-
-    Args:
-        resource_name: Name of the resource.
-        start_date:    Period start as YYYY-MM-DD.
-        end_date:      Period end as YYYY-MM-DD.
-        timescale:     'daily', 'weekly', or 'monthly' (default 'weekly').
+    Availability of one resource over a period, against its assigned work.
+    
+    Dates YYYY-MM-DD. Capacity comes from the resource calendar and max units;
+    the response reports assigned hours, capacity and the gap.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -488,12 +473,12 @@ def get_resource_availability(
     except Exception as e:
         return json.dumps({"error": f"TimeScaleData failed: {e}"})
 
-    return json.dumps({
+    return responder({
         "resource":  res.Name,
         "max_units": max_units,
         "timescale": timescale,
         "periods":   periods,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -529,10 +514,10 @@ def get_resource_rate_tables(resource_name: str) -> str:
         except Exception:
             tables[tname] = []
 
-    return json.dumps({
+    return responder({
         "resource": res.Name,
         "tables":   tables,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -546,14 +531,10 @@ def set_resource_rate_table(
 ) -> str:
     """
     Set or add a cost rate entry in a resource's rate table.
-
-    Args:
-        resource_name:  Name of the resource.
-        table:          Rate table letter: A, B, C, D, or E (default A).
-        standard_rate:  Standard rate as string, e.g. '50/h' or '400/d'.
-        overtime_rate:  Overtime rate as string, e.g. '75/h'.
-        cost_per_use:   Per-use cost (default -1 = don't change).
-        effective_date: When this rate takes effect (YYYY-MM-DD). Empty = first entry.
+    
+    table: A-E (default A). Rates as strings: '50/h', '400/d'.
+    cost_per_use -1 leaves it unchanged. effective_date YYYY-MM-DD, empty for the
+    first entry.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -592,14 +573,14 @@ def set_resource_rate_table(
                 first.CostPerUse = cost_per_use
 
         app.FileSave()
-        return json.dumps({
+        return responder({
             "status":   "updated",
             "resource": res.Name,
             "table":    table.upper(),
             "standard_rate": standard_rate or "(unchanged)",
             "overtime_rate": overtime_rate or "(unchanged)",
             "cost_per_use":  cost_per_use if cost_per_use >= 0 else "(unchanged)",
-        }, indent=2)
+        })
 
     except Exception as e:
         return json.dumps({"error": f"Failed to update rate table: {e}"})

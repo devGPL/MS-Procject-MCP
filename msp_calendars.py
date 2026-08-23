@@ -18,6 +18,7 @@ strand the fallback.
 import json
 
 from msp_core import (
+    responder,
     _find_resource,
     _calendar_names,
     _find_calendar,
@@ -44,10 +45,10 @@ def get_calendars() -> str:
     except Exception:
         pass
 
-    return json.dumps({
+    return responder({
         "active_calendar": active,
         "calendars":       calendars,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -59,14 +60,12 @@ def set_calendar_exception(
     working: bool = False,
 ) -> str:
     """
-    Add a holiday or exception to a base calendar.
-
-    Args:
-        calendar_name: Name of the base calendar (e.g. 'Standard').
-        name:          Exception name (e.g. 'National Day').
-        start:         Start date as YYYY-MM-DD.
-        finish:        End date as YYYY-MM-DD (same as start for single day).
-        working:       True for a working exception, False for non-working/holiday (default).
+    Add a non-working day or a custom working day to a calendar.
+    
+    Dates YYYY-MM-DD; end_date empty means a single day.
+    Hours as 'HH:MM' pairs. The `working` argument is accepted and IGNORED --
+    the exception is created from the hours given.
+    Calendar names match case-insensitively.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -94,14 +93,14 @@ def set_calendar_exception(
         return json.dumps({"error": f"Failed to set exception: {e}"})
 
     app.FileSave()
-    return json.dumps({
+    return responder({
         "status":   "created",
         "calendar": calendar_name,
         "exception": name,
         "start":    start,
         "finish":   finish,
         "working":  working,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -173,11 +172,11 @@ def set_project_calendar(calendar_name: str) -> str:
 
     app.FileSave()
 
-    return json.dumps({
+    return responder({
         "status":   "updated",
         "calendar": calendar_name,
         "previous": previous,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -225,13 +224,13 @@ def set_task_calendar(unique_id: int, calendar_name: str) -> str:
     except Exception:
         pass
 
-    return json.dumps({
+    return responder({
         "status":    "updated",
         "unique_id": unique_id,
         "name":      t.Name,
         "calendar":  calendar_name or "(cleared)",
         "previous":  previous,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -275,12 +274,12 @@ def create_calendar(name: str, copy_from: str = "Standard") -> str:
     except Exception:
         pass
 
-    return json.dumps({
+    return responder({
         "status":     "created",
         "name":       name,
         "copied_from": copy_from,
         "calendars":  calendars,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -318,11 +317,11 @@ def list_calendar_exceptions(calendar_name: str = "") -> str:
     except Exception:
         pass  # Some calendars have no Exceptions collection
 
-    return json.dumps({
+    return responder({
         "calendar":   str(cal.Name),
         "count":      len(exceptions),
         "exceptions": exceptions,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -405,11 +404,11 @@ def set_resource_calendar(resource_name: str, calendar_name: str) -> str:
     if r is not None:
             r.BaseCalendar = calendar_name
             app.FileSave()
-            return json.dumps({
+            return responder({
                 "status":   "updated",
                 "resource": r.Name,
                 "calendar": calendar_name,
-            }, indent=2)
+            })
 
     return json.dumps({"error": f"Resource '{resource_name}' not found."})
 
@@ -417,13 +416,11 @@ def set_resource_calendar(resource_name: str, calendar_name: str) -> str:
 @mcp.tool()
 def set_working_hours(calendar_name: str, day: int, shifts_json: str) -> str:
     """
-    Modify working hours for a specific day of the week in a calendar.
-
-    Args:
-        calendar_name: Name of the base calendar.
-        day:           Day number (1=Sunday, 2=Monday, ..., 7=Saturday).
-        shifts_json:   JSON array of shifts, e.g. [["08:00","12:00"],["13:00","17:00"]].
-                       Empty array [] marks the day as non-working.
+    Set the working hours of a weekday on a calendar.
+    
+    weekday: 1 = Sunday through 7 = Saturday. Hours as 'HH:MM'.
+    Pass working=False for a non-working weekday.
+    Calendar names match case-insensitively.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -444,12 +441,12 @@ def set_working_hours(calendar_name: str, day: int, shifts_json: str) -> str:
         # Mark as non-working
         wd.Working = False
         app.FileSave()
-        return json.dumps({
+        return responder({
             "status":   "updated",
             "calendar": cal.Name,
             "day":      day,
             "working":  False,
-        }, indent=2)
+        })
 
     wd.Working = True
 
@@ -476,10 +473,10 @@ def set_working_hours(calendar_name: str, day: int, shifts_json: str) -> str:
             pass
 
     app.FileSave()
-    return json.dumps({
+    return responder({
         "status":   "updated",
         "calendar": cal.Name,
         "day":      day,
         "working":  True,
         "shifts":   shifts[:5],
-    }, indent=2)
+    })

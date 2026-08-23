@@ -80,6 +80,24 @@ class TarefaFalsa:
         return valores[nome]
 
 
+class TarefaQueFalha(TarefaFalsa):
+    """Uma tarefa COM em que ler certas propriedades levanta.
+
+    O COM real levanta com_error onde este fake levanta RuntimeError. O tipo
+    nao importa aqui: _safe captura Exception, e o que esta sob teste e QUAIS
+    campos ele protege, nao de que classe e a falha.
+    """
+
+    def __init__(self, contador, falham=(), **campos):
+        super().__init__(contador, **campos)
+        object.__setattr__(self, "_falham", set(falham))
+
+    def __getattr__(self, nome):
+        if nome in object.__getattribute__(self, "_falham"):
+            raise RuntimeError("com_error simulado ao ler %s" % nome)
+        return super().__getattr__(nome)
+
+
 class ProjetoFalso:
     def __init__(self, tarefas, nome="Projeto Falso"):
         self.Tasks = tarefas
@@ -437,6 +455,50 @@ async def rodar():
     ok("validate_schedule le menos de 20 propriedades por tarefa em %d tarefas" % N,
        por_tarefa < 20, "leu %.1f" % por_tarefa)
     instalar_falsos(proj)
+    # --- o que uma leitura COM que falha derruba -------------------------
+    #
+    # _safe transforma falha em default. Isso e certo onde o default ja
+    # significa "ausente", e errado onde ele seria uma AFIRMACAO -- e a
+    # diferenca so existe enquanto alguem a defender. Este bloco e a defesa:
+    # protecao demais publica numero inventado como se fosse medicao;
+    # protecao de menos derruba a varredura inteira por uma tarefa ruim.
+    print("\n=== LEITURA COM QUE FALHA ===")
+
+    PROTEGIDOS = {
+        "WBS": ("wbs", ""), "Milestone": ("milestone", False),
+        "Start": ("start", None), "Finish": ("finish", None),
+        "Predecessors": ("predecessors", ""),
+        "ResourceNames": ("resource_names", ""), "Notes": ("notes", ""),
+        "Critical": ("critical", False), "Active": ("active", True),
+        "Text1": ("text1", ""), "Text2": ("text2", ""), "Text3": ("text3", ""),
+        "Flag1": ("flag1", False), "Flag2": ("flag2", False),
+        "Deadline": ("deadline", None), "Priority": ("priority", 500),
+        "TotalSlack": ("total_slack_days", 0), "FreeSlack": ("free_slack_days", 0),
+    }
+    for propriedade, (campo, esperado) in sorted(PROTEGIDOS.items()):
+        ruim = TarefaQueFalha([0], falham=[propriedade], UniqueID=1, ID=1,
+                              Name="Ruim", Duration=480)
+        try:
+            lido = msp_core.task_to_dict(ruim, MPD)
+            ok("%s ilegivel nao derruba, vira %r" % (propriedade, esperado),
+               lido[campo] == esperado, "veio %r" % (lido.get(campo),))
+        except Exception as exc:
+            ok("%s ilegivel nao derruba" % propriedade, False,
+               "%s: %s" % (type(exc).__name__, exc))
+
+    # E os que devem derrubar. Identidade inventada publica a tarefa errada;
+    # estrutura inventada remonta a arvore WBS; medicao inventada vira achado
+    # do validate_schedule. Falhar alto e a resposta certa nos tres casos.
+    for propriedade in ("UniqueID", "ID", "Name", "OutlineLevel", "Summary",
+                        "PercentComplete", "Duration"):
+        ruim = TarefaQueFalha([0], falham=[propriedade], UniqueID=1, ID=1,
+                              Name="Ruim", Duration=480)
+        try:
+            msp_core.task_to_dict(ruim, MPD)
+            ok("%s ilegivel deve derrubar, nao virar default" % propriedade, False,
+               "passou calado")
+        except Exception:
+            ok("%s ilegivel derruba em vez de inventar" % propriedade, True)
 
     await payload(ok)
 

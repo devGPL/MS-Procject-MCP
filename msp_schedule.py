@@ -24,14 +24,16 @@ from msp_core import (
     mcp,
     get_app,
     get_proj,
-    task_to_dict,
+    tarefa_completa,
+    vista_com,
+    VistaCOM,
+    _dia,
     _find_task,
     _fmt_date,
     _get_mpd,
     _parse_date,
     _to_naive,
 )
-
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +62,7 @@ def _new_probe():
             "probing": True}
 
 
-def _probe_link(probe, task):
+def _probe_vista(probe, v, teto=True):
     """Count one detail task: is it linked, is it manually scheduled.
 
     Both matter, and checking only the first is what an earlier version of this
@@ -70,17 +72,20 @@ def _probe_link(probe, task):
     a real 8,429-task schedule: 2,758 of 3,000 detail tasks linked, all 3,000
     manual, zero marked critical.
 
-    Costs two property reads per detail task until the ceiling is reached.
+    `teto` applies the sampling ceiling, and belongs to the COM backend only:
+    the ceiling exists to stop paying two COM reads per task once the answer
+    is settled. Reading two keys of a parsed dict is free, so that side counts
+    everything and reports exact numbers instead of ">= 200".
     """
     probe["detail"] += 1
-    if not probe["probing"]:
+    if teto and not probe["probing"]:
         return
     try:
-        tem_pred = bool(task.Predecessors)
+        tem_pred = bool(v["predecessors"])
     except Exception:
         tem_pred = False
     try:
-        eh_manual = bool(task.Manual)
+        eh_manual = bool(v["manual"])
     except Exception:
         eh_manual = False
 
@@ -90,7 +95,7 @@ def _probe_link(probe, task):
         probe["manual"] += 1
     if tem_pred and not eh_manual:
         probe["auto_linked"] += 1
-        if probe["auto_linked"] >= _PROBE_CEILING:
+        if teto and probe["auto_linked"] >= _PROBE_CEILING:
             probe["probing"] = False
 
 
@@ -143,29 +148,6 @@ def _network_warning(probe, o_que):
     )
 
 
-
-def _probe_de_dicts(tarefas):
-    """Same probe, computed from parsed dicts instead of COM objects.
-
-    No sampling ceiling here: the ceiling exists to stop paying for COM reads,
-    and these are dictionary lookups. Counting all of them is free and gives
-    exact numbers instead of ">= 200".
-    """
-    probe = _new_probe()
-    probe["probing"] = True
-    for d in tarefas:
-        probe["detail"] += 1
-        tem_pred = bool(d.get("predecessors"))
-        eh_manual = bool(d.get("manual"))
-        if tem_pred:
-            probe["linked"] += 1
-        if eh_manual:
-            probe["manual"] += 1
-        if tem_pred and not eh_manual:
-            probe["auto_linked"] += 1
-    return probe
-
-
 @mcp.tool()
 def get_critical_path() -> str:
     """Return all tasks on the critical path (non-summary)."""
@@ -174,42 +156,20 @@ def get_critical_path() -> str:
     mpd = _get_mpd(proj)
 
     # Fast path first: parsing the saved file walks 8,000+ tasks in under a
-    # second where COM needs half a minute. contexto() decides per call and
+    # second where COM needs half a minute. varredura() decides per call and
     # explains itself; anything it cannot verify sends us to COM.
-    usar_arquivo, caminho, origem = msp_fast.contexto(proj)
-    results = None
-    if usar_arquivo:
-        try:
-            lidas = msp_fast.tarefas(msp_fast.ler(caminho))
-            probe = _probe_de_dicts(lidas)
-            results = [d for d in lidas if d.get("critical")]
-        except Exception as exc:
-            # A parse failure must not fail the tool -- COM still works. But it
-            # must not hide either: an exception here is a defect, not the
-            # documented case of the fast path being unavailable, and the two
-            # look identical from outside. This one is flagged loudly, because
-            # a fallback that silently degrades is how a change that delivers
-            # nothing still looks like it works.
-            origem = {
-                "backend": "com",
-                "reason": "fast path RAISED and fell back: %s: %s"
-                          % (type(exc).__name__, str(exc)[:140]),
-                "action_required": "This is a bug, not a configuration. The "
-                                   "answer below is correct but was produced "
-                                   "the slow way; report the error above.",
-            }
-            results = None
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
+    teto = lidas is None
 
-    if results is None:
-        mpd = _get_mpd(proj)
-        results = []
-        probe = _new_probe()
-        for t in proj.Tasks:
-            if t is None or t.Summary:
-                continue
-            _probe_link(probe, t)
-            if t.Critical:
-                results.append(task_to_dict(t, mpd))
+    results = []
+    probe = _new_probe()
+    for v in fonte:
+        if v["summary"]:
+            continue
+        _probe_vista(probe, v, teto)
+        if v["critical"]:
+            results.append(tarefa_completa(v))
 
     saida = {
         "count": len(results),
@@ -233,6 +193,10 @@ def get_schedule_analysis() -> str:
     proj = get_proj(app)
     mpd = _get_mpd(proj)
 
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
+    teto = lidas is None
+
     tasks = []
     zero_float = 0
     negative_float = 0
@@ -240,20 +204,14 @@ def get_schedule_analysis() -> str:
     count = 0
 
     probe = _new_probe()
-    for t in proj.Tasks:
-        if t is None or t.Summary:
+    for v in fonte:
+        if v["summary"]:
             continue
         count += 1
-        _probe_link(probe, t)
+        _probe_vista(probe, v, teto)
 
-        try:
-            ts = round(t.TotalSlack / mpd, 2) if t.TotalSlack is not None else 0
-        except Exception:
-            ts = 0
-        try:
-            fs = round(t.FreeSlack / mpd, 2) if t.FreeSlack is not None else 0
-        except Exception:
-            fs = 0
+        ts = v["total_slack_days"] or 0
+        fs = v["free_slack_days"] or 0
 
         if ts == 0:
             zero_float += 1
@@ -262,13 +220,13 @@ def get_schedule_analysis() -> str:
         total_slack_sum += ts
 
         tasks.append({
-            "unique_id":       t.UniqueID,
-            "name":            t.Name,
+            "unique_id":       v["unique_id"],
+            "name":            v["name"],
             "total_slack_days": ts,
             "free_slack_days":  fs,
-            "critical":        bool(t.Critical),
-            "start":           _fmt_date(t.Start),
-            "finish":          _fmt_date(t.Finish),
+            "critical":        bool(v["critical"]),
+            "start":           _dia(v["start"]),
+            "finish":          _dia(v["finish"]),
         })
 
     saida = {
@@ -278,6 +236,7 @@ def get_schedule_analysis() -> str:
             "negative_float":  negative_float,
             "avg_total_slack":  round(total_slack_sum / count, 2) if count else 0,
         },
+        "source": origem,
         "diagnostics": _probe_report(probe),
         "tasks": tasks,
     }
@@ -439,44 +398,37 @@ def find_available_slack(min_days: int = 5) -> str:
     proj = get_proj(app)
     mpd = _get_mpd(proj)
 
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
+    teto = lidas is None
+
     tasks = []
     probe = _new_probe()
-    for t in proj.Tasks:
-        if t is None or t.Summary:
+    for v in fonte:
+        if v["summary"]:
             continue
-        _probe_link(probe, t)
+        _probe_vista(probe, v, teto)
 
-        try:
-            ts = t.TotalSlack
-            if ts is None:
-                continue
-            ts_days = round(ts / mpd, 2)
-            if ts_days < min_days:
-                continue
-
-            fs = 0
-            try:
-                fs = round(t.FreeSlack / mpd, 2) if t.FreeSlack else 0
-            except Exception:
-                pass
-
-            tasks.append({
-                "unique_id":        t.UniqueID,
-                "name":             t.Name,
-                "total_slack_days": ts_days,
-                "free_slack_days":  fs,
-                "start":            _fmt_date(t.Start),
-                "finish":           _fmt_date(t.Finish),
-                "resource_names":   t.ResourceNames or "",
-            })
-        except Exception:
+        ts_days = v["total_slack_days"] or 0
+        if ts_days < min_days:
             continue
+
+        tasks.append({
+            "unique_id":        v["unique_id"],
+            "name":             v["name"],
+            "total_slack_days": ts_days,
+            "free_slack_days":  v["free_slack_days"] or 0,
+            "start":            _dia(v["start"]),
+            "finish":           _dia(v["finish"]),
+            "resource_names":   v["resource_names"] or "",
+        })
 
     tasks.sort(key=lambda x: x["total_slack_days"], reverse=True)
 
     saida = {
         "min_days":    min_days,
         "count":       len(tasks),
+        "source":      origem,
         "diagnostics": _probe_report(probe),
         "tasks":       tasks,
     }
@@ -901,7 +853,7 @@ def what_if_delay(
     for t in proj.Tasks:
         if t is None or t.Summary:
             continue
-        _probe_link(probe, t)
+        _probe_vista(probe, VistaCOM(t, mpd))
         try:
             ts = t.TotalSlack if t.TotalSlack is not None else 0
             fs = t.FreeSlack if t.FreeSlack is not None else 0

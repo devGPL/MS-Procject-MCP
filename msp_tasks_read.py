@@ -16,21 +16,29 @@ Two placements are deliberate and would otherwise look wrong:
   trades thematic coherence for a contained call graph -- worth knowing before
   hunting for it next to the other export tools.
 
-get_constraints still carries its own local copy of CONSTRAINT_NAMES,
-duplicating the one in msp_core. Removing it is a body edit and belongs to the
-later consolidation step, not to a cut.
+Twelve of these tools read through a VIEW rather than through COM directly:
+they take whatever msp_fast.varredura hands them -- dicts parsed from the
+saved .mpp, or COM tasks wrapped so they answer to the same key names -- and
+the body cannot tell which. Every one of them reports which backend served it
+under "source". The four that remain on COM alone need fields no view carries:
+baselines (get_milestone_report), work (get_actual_work), timephased series,
+or the view itself (apply_filter).
 """
 
 import json
 import datetime
 
+import msp_fast
+
 from msp_core import (
     TIMESCALE_MAP,
-    CONSTRAINT_NAMES,
     mcp,
     get_app,
     get_proj,
-    task_to_dict,
+    tarefa_completa,
+    vista_com,
+    _dia,
+    _dt_de_vista,
     _find_task,
     _fmt_date,
     _get_mpd,
@@ -57,19 +65,22 @@ def get_tasks(
     proj = get_proj(app)
     mpd = _get_mpd(proj)
 
-    results = []
-    for t in proj.Tasks:
-        if t is None:
-            continue
-        if not include_summary and t.Summary:
-            continue
-        if outline_level > 0 and t.OutlineLevel != outline_level:
-            continue
-        if keyword and keyword.lower() not in t.Name.lower():
-            continue
-        results.append(task_to_dict(t, mpd))
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
 
-    return json.dumps({"count": len(results), "tasks": results}, indent=2)
+    alvo = keyword.lower()
+    results = []
+    for v in fonte:
+        if not include_summary and v["summary"]:
+            continue
+        if outline_level > 0 and v["outline_level"] != outline_level:
+            continue
+        if alvo and alvo not in (v["name"] or "").lower():
+            continue
+        results.append(tarefa_completa(v))
+
+    return json.dumps({"count": len(results), "source": origem,
+                       "tasks": results}, indent=2)
 
 
 @mcp.tool()
@@ -79,11 +90,21 @@ def get_task(unique_id: int) -> str:
     proj = get_proj(app)
     mpd = _get_mpd(proj)
 
-    for t in proj.Tasks:
-        if t is not None and t.UniqueID == unique_id:
-            return json.dumps(task_to_dict(t, mpd), indent=2)
+    # Reads like a cheap lookup and is not: there is no index by UniqueID on
+    # either side, so both backends scan. The scan is what the fast path pays
+    # for -- a task near the end of an 8,000-row schedule is 8,000 COM object
+    # fetches away.
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
 
-    return json.dumps({"error": f"Task UniqueID {unique_id} not found."})
+    for v in fonte:
+        if v["unique_id"] == unique_id:
+            saida = tarefa_completa(v)
+            saida["source"] = origem
+            return json.dumps(saida, indent=2)
+
+    return json.dumps({"error": f"Task UniqueID {unique_id} not found.",
+                       "source": origem})
 
 
 @mcp.tool()
@@ -96,38 +117,44 @@ def get_tasks_by_rag(rag: str = "Red") -> str:
     proj = get_proj(app)
     mpd = _get_mpd(proj)
 
-    results = []
-    for t in proj.Tasks:
-        if t is not None and not t.Summary:
-            if (t.Text1 or "").strip().lower() == rag.strip().lower():
-                results.append(task_to_dict(t, mpd))
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
 
-    return json.dumps({"rag": rag, "count": len(results), "tasks": results}, indent=2)
+    alvo = rag.strip().lower()
+    results = []
+    for v in fonte:
+        if v["summary"]:
+            continue
+        if (v["text1"] or "").strip().lower() == alvo:
+            results.append(tarefa_completa(v))
+
+    return json.dumps({"rag": rag, "count": len(results), "source": origem,
+                       "tasks": results}, indent=2)
 
 
 @mcp.tool()
 def get_overdue_tasks() -> str:
     """Return incomplete tasks whose Finish date is in the past."""
-    import datetime
     today = datetime.datetime.now()
     app   = get_app()
     proj  = get_proj(app)
     mpd  = _get_mpd(proj)
 
-    results = []
-    for t in proj.Tasks:
-        if t is None or t.Summary or t.Milestone:
-            continue
-        if t.PercentComplete >= 100:
-            continue
-        try:
-            finish = _to_naive(t.Finish)
-            if finish and finish < today:
-                results.append(task_to_dict(t, mpd))
-        except Exception:
-            continue
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
 
-    return json.dumps({"count": len(results), "tasks": results}, indent=2)
+    results = []
+    for v in fonte:
+        if v["summary"] or v["milestone"]:
+            continue
+        if (v["percent_complete"] or 0) >= 100:
+            continue
+        finish = _dt_de_vista(v["finish"])
+        if finish and finish < today:
+            results.append(tarefa_completa(v))
+
+    return json.dumps({"count": len(results), "source": origem,
+                       "tasks": results}, indent=2)
 
 
 @mcp.tool()
@@ -137,16 +164,21 @@ def get_tasks_by_resource(resource_name: str) -> str:
     proj = get_proj(app)
     mpd = _get_mpd(proj)
 
-    results = []
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
+
     name_lower = resource_name.lower()
-    for t in proj.Tasks:
-        if t is not None and not t.Summary:
-            if name_lower in (t.ResourceNames or "").lower():
-                results.append(task_to_dict(t, mpd))
+    results = []
+    for v in fonte:
+        if v["summary"]:
+            continue
+        if name_lower in (v["resource_names"] or "").lower():
+            results.append(tarefa_completa(v))
 
     return json.dumps({
         "resource": resource_name,
         "count":    len(results),
+        "source":   origem,
         "tasks":    results,
     }, indent=2)
 
@@ -168,20 +200,23 @@ def get_progress_summary() -> str:
     - Count by RAG status (Text1)
     - Count of overdue, critical tasks
     """
-    import datetime
     today = datetime.datetime.now()
     app   = get_app()
     proj  = get_proj(app)
+    mpd   = _get_mpd(proj)
+
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
 
     not_started = in_progress = complete = 0
     rag_counts  = {"Red": 0, "Amber": 0, "Green": 0, "Other": 0}
     overdue     = critical = 0
 
-    for t in proj.Tasks:
-        if t is None or t.Summary:
+    for v in fonte:
+        if v["summary"]:
             continue
 
-        pct = t.PercentComplete
+        pct = v["percent_complete"] or 0
         if pct == 0:
             not_started += 1
         elif pct < 100:
@@ -189,26 +224,24 @@ def get_progress_summary() -> str:
         else:
             complete += 1
 
-        rag = (t.Text1 or "").strip()
+        rag = (v["text1"] or "").strip()
         if rag in rag_counts:
             rag_counts[rag] += 1
         elif rag:
             rag_counts["Other"] += 1
 
-        if t.Critical:
+        if v["critical"]:
             critical += 1
 
-        try:
-            fin = _to_naive(t.Finish)
-            if fin and fin < today and pct < 100:
-                overdue += 1
-        except Exception:
-            pass
+        fin = _dt_de_vista(v["finish"])
+        if fin and fin < today and pct < 100:
+            overdue += 1
 
     total = not_started + in_progress + complete
 
     return json.dumps({
         "project":     proj.Name,
+        "source":      origem,
         "total_tasks": total,
         "by_progress": {
             "not_started": not_started,
@@ -235,28 +268,31 @@ def get_wbs_structure(max_level: int = 0) -> str:
     proj = get_proj(app)
     mpd = _get_mpd(proj)
 
-    # Build flat list first
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
+
+    # Build flat list first. Order carries the hierarchy here -- the tree below
+    # is built by walking this list against a stack of parents -- which is why
+    # the fast path sorts by ID before returning, the order COM enumerates in.
     flat = []
-    for t in proj.Tasks:
-        if t is None:
-            continue
-        if max_level > 0 and t.OutlineLevel > max_level:
+    for v in fonte:
+        if max_level > 0 and v["outline_level"] > max_level:
             continue
         flat.append({
-            "unique_id":     t.UniqueID,
-            "id":            t.ID,
-            "name":          t.Name,
-            "level":         t.OutlineLevel,
-            "summary":       bool(t.Summary),
-            "milestone":     bool(t.Milestone),
-            "start":         _fmt_date(t.Start),
-            "finish":        _fmt_date(t.Finish),
-            "duration_days": round(t.Duration / mpd, 2) if t.Duration else 0,
+            "unique_id":     v["unique_id"],
+            "id":            v["id"],
+            "name":          v["name"],
+            "level":         v["outline_level"],
+            "summary":       bool(v["summary"]),
+            "milestone":     bool(v["milestone"]),
+            "start":         _dia(v["start"]),
+            "finish":        _dia(v["finish"]),
+            "duration_days": v["duration_days"],
             "children":      [],
         })
 
     # Build tree using stack
-    root = {"name": proj.Name, "level": 0, "children": []}
+    root = {"name": proj.Name, "level": 0, "source": origem, "children": []}
     stack = [root]
 
     for node in flat:
@@ -291,73 +327,69 @@ def filter_tasks(filters_json: str) -> str:
     proj = get_proj(app)
     mpd = _get_mpd(proj)
 
+    # Predicates read a view by published key name, so the same predicate runs
+    # against a dict parsed from the file and against a COM task -- and the COM
+    # side still reads only the fields a filter actually mentions, one round
+    # trip each, cached.
     predicates = []
 
+    def texto_igual(chave, valor):
+        alvo = valor.lower()
+        return lambda v: (v[chave] or "").strip().lower() == alvo
+
     if "rag" in f:
-        v = f["rag"].lower()
-        predicates.append(lambda t, _v=v: (t.Text1 or "").strip().lower() == _v)
+        predicates.append(texto_igual("text1", f["rag"]))
     if "resource" in f:
-        v = f["resource"].lower()
-        predicates.append(lambda t, _v=v: _v in (t.ResourceNames or "").lower())
+        alvo = f["resource"].lower()
+        predicates.append(lambda v, _a=alvo: _a in (v["resource_names"] or "").lower())
     if "start_after" in f:
         d = _parse_date(f["start_after"])
-        predicates.append(lambda t, _d=d: t.Start is not None and t.Start >= _d)
+        predicates.append(lambda v, _d=d: (_dt_de_vista(v["start"]) or datetime.datetime.min) >= _d)
     if "start_before" in f:
         d = _parse_date(f["start_before"])
-        predicates.append(lambda t, _d=d: t.Start is not None and t.Start <= _d)
+        predicates.append(lambda v, _d=d: (_dt_de_vista(v["start"]) or datetime.datetime.max) <= _d)
     if "finish_after" in f:
         d = _parse_date(f["finish_after"])
-        predicates.append(lambda t, _d=d: t.Finish is not None and t.Finish >= _d)
+        predicates.append(lambda v, _d=d: (_dt_de_vista(v["finish"]) or datetime.datetime.min) >= _d)
     if "finish_before" in f:
         d = _parse_date(f["finish_before"])
-        predicates.append(lambda t, _d=d: t.Finish is not None and t.Finish <= _d)
+        predicates.append(lambda v, _d=d: (_dt_de_vista(v["finish"]) or datetime.datetime.max) <= _d)
     if "min_pct" in f:
-        v = f["min_pct"]
-        predicates.append(lambda t, _v=v: t.PercentComplete >= _v)
+        predicates.append(lambda v, _x=f["min_pct"]: (v["percent_complete"] or 0) >= _x)
     if "max_pct" in f:
-        v = f["max_pct"]
-        predicates.append(lambda t, _v=v: t.PercentComplete <= _v)
+        predicates.append(lambda v, _x=f["max_pct"]: (v["percent_complete"] or 0) <= _x)
     if "outline_level" in f:
-        v = f["outline_level"]
-        predicates.append(lambda t, _v=v: t.OutlineLevel == _v)
+        predicates.append(lambda v, _x=f["outline_level"]: v["outline_level"] == _x)
     if "critical" in f:
-        v = f["critical"]
-        predicates.append(lambda t, _v=v: bool(t.Critical) == _v)
+        predicates.append(lambda v, _x=f["critical"]: bool(v["critical"]) == _x)
     if "milestone" in f:
-        v = f["milestone"]
-        predicates.append(lambda t, _v=v: bool(t.Milestone) == _v)
+        predicates.append(lambda v, _x=f["milestone"]: bool(v["milestone"]) == _x)
     if "active" in f:
-        v = f["active"]
-        predicates.append(lambda t, _v=v: bool(t.Active) == _v)
+        predicates.append(lambda v, _x=f["active"]: bool(v["active"]) == _x)
     if "summary" in f:
-        v = f["summary"]
-        predicates.append(lambda t, _v=v: bool(t.Summary) == _v)
+        predicates.append(lambda v, _x=f["summary"]: bool(v["summary"]) == _x)
     if "name_contains" in f:
-        v = f["name_contains"].lower()
-        predicates.append(lambda t, _v=v: _v in t.Name.lower())
+        alvo = f["name_contains"].lower()
+        predicates.append(lambda v, _a=alvo: _a in (v["name"] or "").lower())
     if "text1" in f:
-        v = f["text1"].lower()
-        predicates.append(lambda t, _v=v: (t.Text1 or "").strip().lower() == _v)
+        predicates.append(texto_igual("text1", f["text1"]))
     if "text2" in f:
-        v = f["text2"].lower()
-        predicates.append(lambda t, _v=v: (t.Text2 or "").strip().lower() == _v)
+        predicates.append(texto_igual("text2", f["text2"]))
     if "text3" in f:
-        v = f["text3"].lower()
-        predicates.append(lambda t, _v=v: (t.Text3 or "").strip().lower() == _v)
+        predicates.append(texto_igual("text3", f["text3"]))
     if "flag1" in f:
-        v = f["flag1"]
-        predicates.append(lambda t, _v=v: bool(t.Flag1) == _v)
+        predicates.append(lambda v, _x=f["flag1"]: bool(v["flag1"]) == _x)
     if "flag2" in f:
-        v = f["flag2"]
-        predicates.append(lambda t, _v=v: bool(t.Flag2) == _v)
+        predicates.append(lambda v, _x=f["flag2"]: bool(v["flag2"]) == _x)
+
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
 
     # Collect matching tasks
     matched = []
-    for t in proj.Tasks:
-        if t is None:
-            continue
-        if all(p(t) for p in predicates):
-            matched.append(task_to_dict(t, mpd))
+    for v in fonte:
+        if all(p(v) for p in predicates):
+            matched.append(tarefa_completa(v))
 
     # Sort
     sort_by = f.get("sort_by", "")
@@ -381,6 +413,7 @@ def filter_tasks(filters_json: str) -> str:
         "returned":       len(matched),
         "offset":         offset,
         "limit":          limit or total,
+        "source":         origem,
         "tasks":          matched,
     }, indent=2)
 
@@ -393,31 +426,36 @@ def group_tasks_by(field: str, include_tasks: bool = False) -> str:
     Args:
         field:         Field to group by: 'rag', 'resource', 'outline_level', 'critical',
                        'milestone', 'percent_complete', 'text1', 'text2', 'text3',
-                       'flag1', 'flag2'.
+                       'flag1', 'flag2'. Any other name is looked up among the
+                       fields a task is published with (the keys get_task
+                       returns), and yields '(unknown)' when there is none.
         include_tasks: If true, include task list per group (default false).
     """
     app  = get_app()
     proj = get_proj(app)
     mpd = _get_mpd(proj)
 
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
+
     groups = {}
     total  = 0
 
-    for t in proj.Tasks:
-        if t is None or t.Summary:
+    for v in fonte:
+        if v["summary"]:
             continue
         total += 1
 
-        td = task_to_dict(t, mpd) if include_tasks else None
+        td = tarefa_completa(v) if include_tasks else None
 
         if field == "resource":
             # Split comma-separated resource names
-            names = [n.strip() for n in (t.ResourceNames or "").split(",") if n.strip()]
+            names = [n.strip() for n in (v["resource_names"] or "").split(",") if n.strip()]
             if not names:
                 names = ["(unassigned)"]
             keys = names
         elif field == "percent_complete":
-            pct = t.PercentComplete
+            pct = v["percent_complete"] or 0
             if pct == 0:
                 keys = ["0%"]
             elif pct <= 25:
@@ -431,23 +469,23 @@ def group_tasks_by(field: str, include_tasks: bool = False) -> str:
             else:
                 keys = ["100%"]
         elif field in ("rag", "text1"):
-            keys = [(t.Text1 or "").strip() or "(blank)"]
+            keys = [(v["text1"] or "").strip() or "(blank)"]
         elif field == "text2":
-            keys = [(t.Text2 or "").strip() or "(blank)"]
+            keys = [(v["text2"] or "").strip() or "(blank)"]
         elif field == "text3":
-            keys = [(t.Text3 or "").strip() or "(blank)"]
+            keys = [(v["text3"] or "").strip() or "(blank)"]
         elif field == "outline_level":
-            keys = [str(t.OutlineLevel)]
+            keys = [str(v["outline_level"])]
         elif field == "critical":
-            keys = [str(bool(t.Critical))]
+            keys = [str(bool(v["critical"]))]
         elif field == "milestone":
-            keys = [str(bool(t.Milestone))]
+            keys = [str(bool(v["milestone"]))]
         elif field == "flag1":
-            keys = [str(bool(t.Flag1))]
+            keys = [str(bool(v["flag1"]))]
         elif field == "flag2":
-            keys = [str(bool(t.Flag2))]
+            keys = [str(bool(v["flag2"]))]
         else:
-            keys = [str(getattr(t, field, "(unknown)"))]
+            keys = [str(v.get(field, "(unknown)"))]
 
         for k in keys:
             if k not in groups:
@@ -462,6 +500,7 @@ def group_tasks_by(field: str, include_tasks: bool = False) -> str:
 
     return json.dumps({
         "field":       field,
+        "source":      origem,
         "groups":      result,
         "total_tasks": total,
     }, indent=2)
@@ -555,14 +594,20 @@ def get_progress_by_wbs(max_level: int = 2) -> str:
     """
     app  = get_app()
     proj = get_proj(app)
+    mpd  = _get_mpd(proj)
+
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
 
     branches = []
-    tasks_list = [t for t in proj.Tasks if t is not None]
+    # Materialised because every branch walks forward from its own position to
+    # find its children -- the list is read many times over, not once.
+    tasks_list = list(fonte)
 
     for i, t in enumerate(tasks_list):
-        if not t.Summary:
+        if not t["summary"]:
             continue
-        if t.OutlineLevel > max_level:
+        if t["outline_level"] > max_level:
             continue
 
         # Count children
@@ -571,22 +616,22 @@ def get_progress_by_wbs(max_level: int = 2) -> str:
         milestones_total = 0
         for j in range(i + 1, len(tasks_list)):
             child = tasks_list[j]
-            if child.OutlineLevel <= t.OutlineLevel:
+            if child["outline_level"] <= t["outline_level"]:
                 break
-            if not child.Summary:
+            if not child["summary"]:
                 child_count += 1
-                if child.Milestone:
+                if child["milestone"]:
                     milestones_total += 1
-                    if child.PercentComplete >= 100:
+                    if (child["percent_complete"] or 0) >= 100:
                         milestones_complete += 1
 
         branches.append({
-            "unique_id":          t.UniqueID,
-            "name":               t.Name,
-            "level":              t.OutlineLevel,
-            "percent_complete":   t.PercentComplete,
-            "start":              _fmt_date(t.Start),
-            "finish":             _fmt_date(t.Finish),
+            "unique_id":          t["unique_id"],
+            "name":               t["name"],
+            "level":              t["outline_level"],
+            "percent_complete":   t["percent_complete"],
+            "start":              _dia(t["start"]),
+            "finish":             _dia(t["finish"]),
             "child_count":        child_count,
             "milestones_complete": milestones_complete,
             "milestones_total":   milestones_total,
@@ -594,6 +639,7 @@ def get_progress_by_wbs(max_level: int = 2) -> str:
 
     return json.dumps({
         "max_level": max_level,
+        "source":    origem,
         "branches":  branches,
     }, indent=2)
 
@@ -630,10 +676,11 @@ def export_csv(output_path: str, columns_json: str = "", filters_json: str = "")
         # Reuse filter_tasks logic inline
         result = json.loads(filter_tasks(json.dumps(f)))
         tasks = result.get("tasks", [])
+        origem = result.get("source")
     else:
-        for t in proj.Tasks:
-            if t is not None:
-                tasks.append(task_to_dict(t, mpd))
+        lidas, origem = msp_fast.varredura(proj)
+        fonte = lidas if lidas is not None else vista_com(proj, mpd)
+        tasks = [tarefa_completa(v) for v in fonte]
 
     # Write CSV
     with open(output_path, "w", newline="", encoding="utf-8") as fp:
@@ -648,6 +695,7 @@ def export_csv(output_path: str, columns_json: str = "", filters_json: str = "")
         "path":    output_path,
         "rows":    len(tasks),
         "columns": columns,
+        "source":  origem,
     }, indent=2)
 
 
@@ -678,24 +726,30 @@ def get_constraints() -> str:
     """Return all tasks with non-default (non-ASAP) scheduling constraints."""
     app  = get_app()
     proj = get_proj(app)
+    mpd  = _get_mpd(proj)
+
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
 
     results = []
-    for t in proj.Tasks:
-        if t is None or t.Summary:
+    for v in fonte:
+        if v["summary"]:
             continue
-        try:
-            ct = t.ConstraintType
-            if ct != 0:  # 0 = ASAP (default)
-                results.append({
-                    "unique_id":       t.UniqueID,
-                    "name":            t.Name,
-                    "constraint_type": CONSTRAINT_NAMES.get(ct, f"Unknown({ct})"),
-                    "constraint_date": _fmt_date(t.ConstraintDate),
-                })
-        except Exception:
-            continue
+        # Both backends publish the constraint already named, and both map an
+        # unrecognised value to "ASAP" -- so a constraint neither reader knows
+        # is now reported as absent rather than as "Unknown(9)". The eight
+        # values are the whole of the COM enum; a ninth would be a new
+        # Microsoft Project.
+        if v["constraint_type"] != "ASAP":
+            results.append({
+                "unique_id":       v["unique_id"],
+                "name":            v["name"],
+                "constraint_type": v["constraint_type"],
+                "constraint_date": _dia(v["constraint_date"]),
+            })
 
-    return json.dumps({"count": len(results), "tasks": results}, indent=2)
+    return json.dumps({"count": len(results), "source": origem,
+                       "tasks": results}, indent=2)
 
 
 @mcp.tool()

@@ -17,6 +17,7 @@ function; Gate 1 is what would catch it being left behind.
 import json
 
 from msp_core import (
+    responder,
     mcp,
     get_app,
     get_proj,
@@ -29,11 +30,10 @@ from msp_core import (
 @mcp.tool()
 def save_baseline(baseline_number: int = 0, all_tasks: bool = True) -> str:
     """
-    Save a baseline snapshot for earned value and variance tracking.
-
-    Args:
-        baseline_number: 0 to 10 (Baseline, Baseline1 through Baseline10). Default 0.
-        all_tasks:       True to baseline all tasks (default), False for selected only.
+    Save a baseline for variance and earned-value tracking.
+    
+    baseline_number 0-10 (0 = the main Baseline). all_tasks False baselines only
+    the current selection in the Microsoft Project window.
     """
     if baseline_number < 0 or baseline_number > 10:
         return json.dumps({"error": "baseline_number must be 0-10."})
@@ -46,12 +46,12 @@ def save_baseline(baseline_number: int = 0, all_tasks: bool = True) -> str:
     app.BaselineSave(All=all_tasks, Copy=baseline_number, Into=baseline_number)
     app.FileSave()
 
-    return json.dumps({
+    return responder({
         "status":          "saved",
         "baseline_number": baseline_number,
         "all_tasks":       all_tasks,
         "tasks_baselined": task_count if all_tasks else "selected",
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -70,10 +70,10 @@ def clear_baseline(baseline_number: int = 0, all_tasks: bool = True) -> str:
     app.BaselineClear(All=all_tasks, From=baseline_number)
     app.FileSave()
 
-    return json.dumps({
+    return responder({
         "status":          "cleared",
         "baseline_number": baseline_number,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -154,7 +154,7 @@ def get_earned_value() -> str:
     if warning:
         result["warning"] = warning
 
-    return json.dumps(result, indent=2)
+    return responder(result)
 
 
 @mcp.tool()
@@ -238,7 +238,7 @@ def compare_baselines(baseline_a: int = 0, baseline_b: int = -1) -> str:
     # Sort by finish variance desc (worst slippages first)
     tasks.sort(key=lambda x: x["finish_delta"] if x["finish_delta"] is not None else 0, reverse=True)
 
-    return json.dumps({
+    return responder({
         "baseline_a": baseline_a,
         "baseline_b": baseline_b if baseline_b >= 0 else "current",
         "summary": {
@@ -248,7 +248,7 @@ def compare_baselines(baseline_a: int = 0, baseline_b: int = -1) -> str:
             "max_slippage":         max_slippage,
         },
         "tasks": tasks,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -323,12 +323,12 @@ def get_cost_summary() -> str:
 
     totals["variance"] = totals["baseline_cost"] - totals["cost"]
 
-    return json.dumps({
+    return responder({
         "project": proj.Name,
         "totals":  totals,
         "by_resource":     list({"name": k, **v} for k, v in by_resource.items()),
         "tasks_with_cost": tasks_with_cost,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -380,9 +380,9 @@ def get_variance_report(baseline: int = 0) -> str:
     # Filter to only tasks with actual variance
     with_variance = [t for t in tasks if t["start_variance_days"] != 0 or t["finish_variance_days"] != 0 or t["cost_variance"] != 0]
 
-    return json.dumps({
+    return responder({
         "baseline":       baseline,
         "total_tasks":    len(tasks),
         "with_variance":  len(with_variance),
         "tasks":          with_variance if with_variance else tasks[:50],
-    }, indent=2)
+    })

@@ -24,6 +24,7 @@ suite as proof of COM behaviour.
 
 import contextlib
 import datetime
+import json
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("MS Project")
@@ -385,6 +386,138 @@ def _to_naive(dt):
         pass
     return dt
 
+
+
+# ---------------------------------------------------------------------------
+# Respostas
+#
+# A tool returning every task of a real schedule returned 8.07 MB. Measured on
+# the 8,429-task reference project, and the shape of that number is what
+# decides the design:
+#
+#   indent=2, all 35 fields, all tasks     7.66 MB   ~2,230k tokens
+#   compact separators                     5.38 MB   ~1,566k
+#   compact, empty fields omitted          2.77 MB   ~808k
+#   compact, omitted, first 200 tasks      0.07 MB   ~19k
+#
+# Compacting alone does not solve it. Cutting 64% off something a hundred
+# times larger than any context window still leaves it unusable -- it does not
+# arrive as slowness, it arrives as a conversation that ends early. Only the
+# limit changes the outcome, and the other two make the limited answer cheap.
+# ---------------------------------------------------------------------------
+
+# How many items a listing returns before it says there are more. Callers that
+# genuinely want everything have two doors that stay uncapped: filter_tasks
+# with limit=-1, and export_csv, which writes a file instead of a response.
+LIMITE_PADRAO = 200
+
+# Below this, indent=2 -- a small response is read by people, in logs and in
+# transcripts, and the indentation is worth more than the bytes.
+_LIMIAR_COMPACTO = 4096
+
+
+def responder(payload):
+    """Serialise a tool response: compact when large, indented when small.
+
+    Serialises compact first and re-serialises only the small ones, so the
+    double pass is paid exactly where it costs nothing.
+    """
+    texto = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+    if len(texto) <= _LIMIAR_COMPACTO:
+        return json.dumps(payload, indent=2, ensure_ascii=False)
+    return texto
+
+
+# Kept even when empty: without them the row cannot be identified or ordered.
+_SEMPRE_PUBLICADOS = ("unique_id", "id", "name")
+# Kept when zero, because zero is a measurement here rather than an absence.
+_ZERO_SIGNIFICA = ("percent_complete", "outline_level", "duration_days",
+                   "total_slack_days", "free_slack_days")
+
+
+def enxugar(tarefa):
+    """A task dict without the fields that carry nothing.
+
+    57% of the values in a real schedule are empty, zero or False: unset
+    custom fields, absent deadlines, dates that never happened. Publishing
+    them costs half the payload to say nothing.
+
+    A MISSING KEY MEANS EMPTY, ZERO OR FALSE. That is the contract, and it is
+    the whole cost of this: a caller doing task["notes"] now has to do
+    task.get("notes", ""). Two exceptions, both because dropping the field
+    would not make the answer smaller but wrong -- the fields that identify
+    the row, and the numbers where zero is a reading rather than an absence:
+    0% complete and zero slack are results.
+    """
+    saida = {}
+    for chave, valor in tarefa.items():
+        if chave in _SEMPRE_PUBLICADOS:
+            saida[chave] = valor
+        elif valor is None or valor == "" or valor is False:
+            continue
+        elif valor == 0 and chave not in _ZERO_SIGNIFICA:
+            continue
+        else:
+            saida[chave] = valor
+    return saida
+
+
+def recortar(itens, limite=LIMITE_PADRAO, offset=0):
+    """Return (slice, pagination block) and say when there is more.
+
+    A truncated answer that does not say it is truncated is the worst of the
+    three outcomes here: the caller reads 200 tasks as the whole project and
+    every count they compute from it is wrong.
+    """
+    total = len(itens)
+    if limite is None or limite < 0:
+        limite = total
+    fatia = itens[offset:offset + limite] if limite else itens[offset:]
+    bloco = {"total": total, "returned": len(fatia), "offset": offset}
+    if offset + len(fatia) < total:
+        bloco["truncated"] = True
+        bloco["how_to_get_the_rest"] = (
+            "This is a page of %d from %d. Raise offset for the next page, or "
+            "call filter_tasks with limit=-1 for everything in one response "
+            "(large), or export_csv, which writes the whole set to a file "
+            "instead of into this conversation."
+            % (len(fatia), total)
+        )
+    return fatia, bloco
+
+
+def limpar_titulos_do_schema(servidor):
+    """Drop the decorative "title" pydantic puts on every schema property.
+
+    Measured over the 99 tools: 8.0 KB of the 50.7 KB of tool definitions,
+    about 2,300 tokens, spent on strings like "title": "Unique Id" next to a
+    property already named unique_id. Every client pays that on every session
+    before a single tool is called.
+
+    Reaches into FastMCP's tool manager, which is private, so it is written to
+    fail into a no-op: an mcp release that moves this leaves the definitions
+    fat rather than breaking the server. Validation is unaffected -- arguments
+    are checked against the pydantic model, not against this published copy.
+    """
+    def sem_titulo(no):
+        if isinstance(no, dict):
+            return {k: sem_titulo(v) for k, v in no.items() if k != "title"}
+        if isinstance(no, list):
+            return [sem_titulo(v) for v in no]
+        return no
+
+    try:
+        ferramentas = servidor._tool_manager._tools.values()
+    except Exception:
+        return 0
+    limpas = 0
+    for ferramenta in ferramentas:
+        try:
+            ferramenta.parameters = sem_titulo(ferramenta.parameters)
+            limpas += 1
+        except Exception:
+            pass
+    return limpas
 
 
 def _dia(valor):

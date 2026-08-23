@@ -25,7 +25,7 @@ open; the server attaches to a live instance rather than launching one.
 import argparse
 import sys
 
-from msp_core import mcp
+from msp_core import mcp, limpar_titulos_do_schema
 
 # Tool modules register themselves on `mcp` as a side effect of import. These
 # are NOT unused imports: dropping one silently removes its tools from the
@@ -40,6 +40,12 @@ import msp_resources  # noqa: F401
 import msp_schedule  # noqa: F401
 import msp_tasks_read  # noqa: F401
 import msp_tasks_write  # noqa: F401
+
+# Runs at import, not inside main(), so that every consumer sees the same
+# definitions: the client over stdio, the test suites that import `mcp`
+# directly, and tools/snap_tools.py, whose baseline would otherwise disagree
+# with what a client is actually served.
+limpar_titulos_do_schema(mcp)
 
 
 def main():

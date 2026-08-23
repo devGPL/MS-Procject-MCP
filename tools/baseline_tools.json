@@ -4,20 +4,16 @@
    "properties": {
     "lag_days": {
      "default": 0,
-     "title": "Lag Days",
      "type": "integer"
     },
     "link_type": {
      "default": "FS",
-     "title": "Link Type",
      "type": "string"
     },
     "predecessor_unique_id": {
-     "title": "Predecessor Unique Id",
      "type": "integer"
     },
     "successor_unique_id": {
-     "title": "Successor Unique Id",
      "type": "integer"
     }
    },
@@ -25,7 +21,6 @@
     "successor_unique_id",
     "predecessor_unique_id"
    ],
-   "title": "add_predecessorArguments",
    "type": "object"
   },
   "name": "add_predecessor"
@@ -35,38 +30,31 @@
    "properties": {
     "day_of_week": {
      "default": 2,
-     "title": "Day Of Week",
      "type": "integer"
     },
     "duration_days": {
      "default": 1,
-     "title": "Duration Days",
      "type": "number"
     },
     "end_date": {
      "default": "",
-     "title": "End Date",
      "type": "string"
     },
     "name": {
-     "title": "Name",
      "type": "string"
     },
     "recurrence_type": {
      "default": "weekly",
-     "title": "Recurrence Type",
      "type": "string"
     },
     "start_date": {
      "default": "",
-     "title": "Start Date",
      "type": "string"
     }
    },
    "required": [
     "name"
    ],
-   "title": "add_recurring_taskArguments",
    "type": "object"
   },
   "name": "add_recurring_task"
@@ -76,33 +64,27 @@
    "properties": {
     "cost_per_use": {
      "default": 0.0,
-     "title": "Cost Per Use",
      "type": "number"
     },
     "max_units": {
      "default": 1.0,
-     "title": "Max Units",
      "type": "number"
     },
     "name": {
-     "title": "Name",
      "type": "string"
     },
     "standard_rate": {
      "default": "",
-     "title": "Standard Rate",
      "type": "string"
     },
     "type": {
      "default": 0,
-     "title": "Type",
      "type": "integer"
     }
    },
    "required": [
     "name"
    ],
-   "title": "add_resourceArguments",
    "type": "object"
   },
   "name": "add_resource"
@@ -112,58 +94,47 @@
    "properties": {
     "after_unique_id": {
      "default": 0,
-     "title": "After Unique Id",
      "type": "integer"
     },
     "duration_days": {
      "default": 1,
-     "title": "Duration Days",
      "type": "integer"
     },
     "finish": {
      "default": "",
-     "title": "Finish",
      "type": "string"
     },
     "milestone": {
      "default": false,
-     "title": "Milestone",
      "type": "boolean"
     },
     "name": {
-     "title": "Name",
      "type": "string"
     },
     "notes": {
      "default": "",
-     "title": "Notes",
      "type": "string"
     },
     "outline_level": {
      "default": 1,
-     "title": "Outline Level",
      "type": "integer"
     },
     "rag": {
      "default": "",
-     "title": "Rag",
      "type": "string"
     },
     "resource": {
      "default": "",
-     "title": "Resource",
      "type": "string"
     },
     "start": {
      "default": "",
-     "title": "Start",
      "type": "string"
     }
    },
    "required": [
     "name"
    ],
-   "title": "add_taskArguments",
    "type": "object"
   },
   "name": "add_task"
@@ -172,14 +143,12 @@
   "inputSchema": {
    "properties": {
     "filter_name": {
-     "title": "Filter Name",
      "type": "string"
     }
    },
    "required": [
     "filter_name"
    ],
-   "title": "apply_filterArguments",
    "type": "object"
   },
   "name": "apply_filter"
@@ -188,16 +157,13 @@
   "inputSchema": {
    "properties": {
     "resource_name": {
-     "title": "Resource Name",
      "type": "string"
     },
     "task_unique_id": {
-     "title": "Task Unique Id",
      "type": "integer"
     },
     "units": {
      "default": 1.0,
-     "title": "Units",
      "type": "number"
     }
    },
@@ -205,7 +171,6 @@
     "task_unique_id",
     "resource_name"
    ],
-   "title": "assign_resourceArguments",
    "type": "object"
   },
   "name": "assign_resource"
@@ -214,14 +179,12 @@
   "inputSchema": {
    "properties": {
     "links_json": {
-     "title": "Links Json",
      "type": "string"
     }
    },
    "required": [
     "links_json"
    ],
-   "title": "bulk_add_predecessorsArguments",
    "type": "object"
   },
   "name": "bulk_add_predecessors"
@@ -230,14 +193,12 @@
   "inputSchema": {
    "properties": {
     "tasks_json": {
-     "title": "Tasks Json",
      "type": "string"
     }
    },
    "required": [
     "tasks_json"
    ],
-   "title": "bulk_add_tasksArguments",
    "type": "object"
   },
   "name": "bulk_add_tasks"
@@ -246,14 +207,12 @@
   "inputSchema": {
    "properties": {
     "assignments_json": {
-     "title": "Assignments Json",
      "type": "string"
     }
    },
    "required": [
     "assignments_json"
    ],
-   "title": "bulk_assign_resourcesArguments",
    "type": "object"
   },
   "name": "bulk_assign_resources"
@@ -262,14 +221,12 @@
   "inputSchema": {
    "properties": {
     "deadlines_json": {
-     "title": "Deadlines Json",
      "type": "string"
     }
    },
    "required": [
     "deadlines_json"
    ],
-   "title": "bulk_set_deadlinesArguments",
    "type": "object"
   },
   "name": "bulk_set_deadlines"
@@ -278,14 +235,12 @@
   "inputSchema": {
    "properties": {
     "updates_json": {
-     "title": "Updates Json",
      "type": "string"
     }
    },
    "required": [
     "updates_json"
    ],
-   "title": "bulk_set_task_modeArguments",
    "type": "object"
   },
   "name": "bulk_set_task_mode"
@@ -294,14 +249,12 @@
   "inputSchema": {
    "properties": {
     "updates": {
-     "title": "Updates",
      "type": "string"
     }
    },
    "required": [
     "updates"
    ],
-   "title": "bulk_update_ragArguments",
    "type": "object"
   },
   "name": "bulk_update_rag"
@@ -310,14 +263,12 @@
   "inputSchema": {
    "properties": {
     "updates_json": {
-     "title": "Updates Json",
      "type": "string"
     }
    },
    "required": [
     "updates_json"
    ],
-   "title": "bulk_update_tasksArguments",
    "type": "object"
   },
   "name": "bulk_update_tasks"
@@ -325,7 +276,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "calculate_projectArguments",
    "type": "object"
   },
   "name": "calculate_project"
@@ -335,16 +285,13 @@
    "properties": {
     "all_tasks": {
      "default": true,
-     "title": "All Tasks",
      "type": "boolean"
     },
     "baseline_number": {
      "default": 0,
-     "title": "Baseline Number",
      "type": "integer"
     }
    },
-   "title": "clear_baselineArguments",
    "type": "object"
   },
   "name": "clear_baseline"
@@ -352,7 +299,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "clear_estimated_flagsArguments",
    "type": "object"
   },
   "name": "clear_estimated_flags"
@@ -362,11 +308,9 @@
    "properties": {
     "save": {
      "default": false,
-     "title": "Save",
      "type": "boolean"
     }
    },
-   "title": "close_projectArguments",
    "type": "object"
   },
   "name": "close_project"
@@ -376,16 +320,13 @@
    "properties": {
     "baseline_a": {
      "default": 0,
-     "title": "Baseline A",
      "type": "integer"
     },
     "baseline_b": {
      "default": -1,
-     "title": "Baseline B",
      "type": "integer"
     }
    },
-   "title": "compare_baselinesArguments",
    "type": "object"
   },
   "name": "compare_baselines"
@@ -395,18 +336,15 @@
    "properties": {
     "copies": {
      "default": 1,
-     "title": "Copies",
      "type": "integer"
     },
     "source_unique_id": {
-     "title": "Source Unique Id",
      "type": "integer"
     }
    },
    "required": [
     "source_unique_id"
    ],
-   "title": "copy_task_structureArguments",
    "type": "object"
   },
   "name": "copy_task_structure"
@@ -416,18 +354,15 @@
    "properties": {
     "copy_from": {
      "default": "Standard",
-     "title": "Copy From",
      "type": "string"
     },
     "name": {
-     "title": "Name",
      "type": "string"
     }
    },
    "required": [
     "name"
    ],
-   "title": "create_calendarArguments",
    "type": "object"
   },
   "name": "create_calendar"
@@ -437,23 +372,18 @@
    "properties": {
     "link_type": {
      "default": "FS",
-     "title": "Link Type",
      "type": "string"
     },
     "source_project": {
-     "title": "Source Project",
      "type": "string"
     },
     "source_unique_id": {
-     "title": "Source Unique Id",
      "type": "integer"
     },
     "target_project": {
-     "title": "Target Project",
      "type": "string"
     },
     "target_unique_id": {
-     "title": "Target Unique Id",
      "type": "integer"
     }
    },
@@ -463,7 +393,6 @@
     "target_project",
     "target_unique_id"
    ],
-   "title": "cross_project_linkArguments",
    "type": "object"
   },
   "name": "cross_project_link"
@@ -472,14 +401,12 @@
   "inputSchema": {
    "properties": {
     "calendar_name": {
-     "title": "Calendar Name",
      "type": "string"
     }
    },
    "required": [
     "calendar_name"
    ],
-   "title": "delete_calendarArguments",
    "type": "object"
   },
   "name": "delete_calendar"
@@ -488,11 +415,9 @@
   "inputSchema": {
    "properties": {
     "calendar_name": {
-     "title": "Calendar Name",
      "type": "string"
     },
     "exception_name": {
-     "title": "Exception Name",
      "type": "string"
     }
    },
@@ -500,7 +425,6 @@
     "calendar_name",
     "exception_name"
    ],
-   "title": "delete_calendar_exceptionArguments",
    "type": "object"
   },
   "name": "delete_calendar_exception"
@@ -509,14 +433,12 @@
   "inputSchema": {
    "properties": {
     "resource_name": {
-     "title": "Resource Name",
      "type": "string"
     }
    },
    "required": [
     "resource_name"
    ],
-   "title": "delete_resourceArguments",
    "type": "object"
   },
   "name": "delete_resource"
@@ -525,14 +447,12 @@
   "inputSchema": {
    "properties": {
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
    "required": [
     "unique_id"
    ],
-   "title": "delete_taskArguments",
    "type": "object"
   },
   "name": "delete_task"
@@ -541,14 +461,12 @@
   "inputSchema": {
    "properties": {
     "updates_json": {
-     "title": "Updates Json",
      "type": "string"
     }
    },
    "required": [
     "updates_json"
    ],
-   "title": "dry_run_bulk_updateArguments",
    "type": "object"
   },
   "name": "dry_run_bulk_update"
@@ -558,23 +476,19 @@
    "properties": {
     "columns_json": {
      "default": "",
-     "title": "Columns Json",
      "type": "string"
     },
     "filters_json": {
      "default": "",
-     "title": "Filters Json",
      "type": "string"
     },
     "output_path": {
-     "title": "Output Path",
      "type": "string"
     }
    },
    "required": [
     "output_path"
    ],
-   "title": "export_csvArguments",
    "type": "object"
   },
   "name": "export_csv"
@@ -583,14 +497,12 @@
   "inputSchema": {
    "properties": {
     "output_path": {
-     "title": "Output Path",
      "type": "string"
     }
    },
    "required": [
     "output_path"
    ],
-   "title": "export_xmlArguments",
    "type": "object"
   },
   "name": "export_xml"
@@ -599,14 +511,12 @@
   "inputSchema": {
    "properties": {
     "filters_json": {
-     "title": "Filters Json",
      "type": "string"
     }
    },
    "required": [
     "filters_json"
    ],
-   "title": "filter_tasksArguments",
    "type": "object"
   },
   "name": "filter_tasks"
@@ -616,11 +526,9 @@
    "properties": {
     "min_days": {
      "default": 5,
-     "title": "Min Days",
      "type": "integer"
     }
    },
-   "title": "find_available_slackArguments",
    "type": "object"
   },
   "name": "find_available_slack"
@@ -628,7 +536,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "get_actual_workArguments",
    "type": "object"
   },
   "name": "get_actual_work"
@@ -636,7 +543,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "get_calendarsArguments",
    "type": "object"
   },
   "name": "get_calendars"
@@ -644,7 +550,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "get_constraintsArguments",
    "type": "object"
   },
   "name": "get_constraints"
@@ -652,7 +557,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "get_cost_summaryArguments",
    "type": "object"
   },
   "name": "get_cost_summary"
@@ -660,7 +564,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "get_critical_pathArguments",
    "type": "object"
   },
   "name": "get_critical_path"
@@ -668,7 +571,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "get_critical_path_sequenceArguments",
    "type": "object"
   },
   "name": "get_critical_path_sequence"
@@ -677,21 +579,17 @@
   "inputSchema": {
    "properties": {
     "end_date": {
-     "title": "End Date",
      "type": "string"
     },
     "include_milestones": {
      "default": true,
-     "title": "Include Milestones",
      "type": "boolean"
     },
     "include_non_critical_milestones": {
      "default": false,
-     "title": "Include Non Critical Milestones",
      "type": "boolean"
     },
     "start_date": {
-     "title": "Start Date",
      "type": "string"
     }
    },
@@ -699,7 +597,6 @@
     "start_date",
     "end_date"
    ],
-   "title": "get_critical_tasks_for_periodArguments",
    "type": "object"
   },
   "name": "get_critical_tasks_for_period"
@@ -708,14 +605,12 @@
   "inputSchema": {
    "properties": {
     "field_name": {
-     "title": "Field Name",
      "type": "string"
     }
    },
    "required": [
     "field_name"
    ],
-   "title": "get_custom_field_valuesArguments",
    "type": "object"
   },
   "name": "get_custom_field_values"
@@ -725,23 +620,19 @@
    "properties": {
     "direction": {
      "default": "successors",
-     "title": "Direction",
      "type": "string"
     },
     "max_depth": {
      "default": 50,
-     "title": "Max Depth",
      "type": "integer"
     },
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
    "required": [
     "unique_id"
    ],
-   "title": "get_dependency_chainArguments",
    "type": "object"
   },
   "name": "get_dependency_chain"
@@ -749,7 +640,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "get_earned_valueArguments",
    "type": "object"
   },
   "name": "get_earned_value"
@@ -759,16 +649,13 @@
    "properties": {
     "days_ahead": {
      "default": 30,
-     "title": "Days Ahead",
      "type": "integer"
     },
     "upcoming_count": {
      "default": 10,
-     "title": "Upcoming Count",
      "type": "integer"
     }
    },
-   "title": "get_milestone_reportArguments",
    "type": "object"
   },
   "name": "get_milestone_report"
@@ -776,7 +663,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "get_overdue_tasksArguments",
    "type": "object"
   },
   "name": "get_overdue_tasks"
@@ -786,11 +672,9 @@
    "properties": {
     "max_level": {
      "default": 2,
-     "title": "Max Level",
      "type": "integer"
     }
    },
-   "title": "get_progress_by_wbsArguments",
    "type": "object"
   },
   "name": "get_progress_by_wbs"
@@ -798,7 +682,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "get_progress_summaryArguments",
    "type": "object"
   },
   "name": "get_progress_summary"
@@ -806,7 +689,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "get_project_infoArguments",
    "type": "object"
   },
   "name": "get_project_info"
@@ -815,20 +697,16 @@
   "inputSchema": {
    "properties": {
     "end_date": {
-     "title": "End Date",
      "type": "string"
     },
     "resource_name": {
-     "title": "Resource Name",
      "type": "string"
     },
     "start_date": {
-     "title": "Start Date",
      "type": "string"
     },
     "timescale": {
      "default": "weekly",
-     "title": "Timescale",
      "type": "string"
     }
    },
@@ -837,7 +715,6 @@
     "start_date",
     "end_date"
    ],
-   "title": "get_resource_availabilityArguments",
    "type": "object"
   },
   "name": "get_resource_availability"
@@ -846,14 +723,12 @@
   "inputSchema": {
    "properties": {
     "resource_name": {
-     "title": "Resource Name",
      "type": "string"
     }
    },
    "required": [
     "resource_name"
    ],
-   "title": "get_resource_rate_tablesArguments",
    "type": "object"
   },
   "name": "get_resource_rate_tables"
@@ -863,23 +738,19 @@
    "properties": {
     "end_date": {
      "default": "",
-     "title": "End Date",
      "type": "string"
     },
     "resource_name": {
-     "title": "Resource Name",
      "type": "string"
     },
     "start_date": {
      "default": "",
-     "title": "Start Date",
      "type": "string"
     }
    },
    "required": [
     "resource_name"
    ],
-   "title": "get_resource_workloadArguments",
    "type": "object"
   },
   "name": "get_resource_workload"
@@ -887,7 +758,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "get_resourcesArguments",
    "type": "object"
   },
   "name": "get_resources"
@@ -895,7 +765,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "get_schedule_analysisArguments",
    "type": "object"
   },
   "name": "get_schedule_analysis"
@@ -904,14 +773,12 @@
   "inputSchema": {
    "properties": {
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
    "required": [
     "unique_id"
    ],
-   "title": "get_taskArguments",
    "type": "object"
   },
   "name": "get_task"
@@ -920,14 +787,12 @@
   "inputSchema": {
    "properties": {
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
    "required": [
     "unique_id"
    ],
-   "title": "get_task_dependenciesArguments",
    "type": "object"
   },
   "name": "get_task_dependencies"
@@ -937,21 +802,17 @@
    "properties": {
     "include_summary": {
      "default": false,
-     "title": "Include Summary",
      "type": "boolean"
     },
     "keyword": {
      "default": "",
-     "title": "Keyword",
      "type": "string"
     },
     "outline_level": {
      "default": 0,
-     "title": "Outline Level",
      "type": "integer"
     }
    },
-   "title": "get_tasksArguments",
    "type": "object"
   },
   "name": "get_tasks"
@@ -961,11 +822,9 @@
    "properties": {
     "rag": {
      "default": "Red",
-     "title": "Rag",
      "type": "string"
     }
    },
-   "title": "get_tasks_by_ragArguments",
    "type": "object"
   },
   "name": "get_tasks_by_rag"
@@ -974,14 +833,12 @@
   "inputSchema": {
    "properties": {
     "resource_name": {
-     "title": "Resource Name",
      "type": "string"
     }
    },
    "required": [
     "resource_name"
    ],
-   "title": "get_tasks_by_resourceArguments",
    "type": "object"
   },
   "name": "get_tasks_by_resource"
@@ -991,24 +848,19 @@
    "properties": {
     "data_type": {
      "default": "work",
-     "title": "Data Type",
      "type": "string"
     },
     "end_date": {
-     "title": "End Date",
      "type": "string"
     },
     "start_date": {
-     "title": "Start Date",
      "type": "string"
     },
     "timescale": {
      "default": "weekly",
-     "title": "Timescale",
      "type": "string"
     },
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
@@ -1017,7 +869,6 @@
     "start_date",
     "end_date"
    ],
-   "title": "get_timephased_dataArguments",
    "type": "object"
   },
   "name": "get_timephased_data"
@@ -1027,11 +878,9 @@
    "properties": {
     "baseline": {
      "default": 0,
-     "title": "Baseline",
      "type": "integer"
     }
    },
-   "title": "get_variance_reportArguments",
    "type": "object"
   },
   "name": "get_variance_report"
@@ -1040,12 +889,10 @@
   "inputSchema": {
    "properties": {
     "max_level": {
-     "default": 0,
-     "title": "Max Level",
+     "default": 3,
      "type": "integer"
     }
    },
-   "title": "get_wbs_structureArguments",
    "type": "object"
   },
   "name": "get_wbs_structure"
@@ -1054,19 +901,16 @@
   "inputSchema": {
    "properties": {
     "field": {
-     "title": "Field",
      "type": "string"
     },
     "include_tasks": {
      "default": false,
-     "title": "Include Tasks",
      "type": "boolean"
     }
    },
    "required": [
     "field"
    ],
-   "title": "group_tasks_byArguments",
    "type": "object"
   },
   "name": "group_tasks_by"
@@ -1074,7 +918,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "health_checkArguments",
    "type": "object"
   },
   "name": "health_check"
@@ -1083,14 +926,12 @@
   "inputSchema": {
    "properties": {
     "file_path": {
-     "title": "File Path",
      "type": "string"
     }
    },
    "required": [
     "file_path"
    ],
-   "title": "import_xmlArguments",
    "type": "object"
   },
   "name": "import_xml"
@@ -1100,18 +941,15 @@
    "properties": {
     "direction": {
      "default": "indent",
-     "title": "Direction",
      "type": "string"
     },
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
    "required": [
     "unique_id"
    ],
-   "title": "indent_taskArguments",
    "type": "object"
   },
   "name": "indent_task"
@@ -1121,18 +959,15 @@
    "properties": {
     "after_unique_id": {
      "default": 0,
-     "title": "After Unique Id",
      "type": "integer"
     },
     "file_path": {
-     "title": "File Path",
      "type": "string"
     }
    },
    "required": [
     "file_path"
    ],
-   "title": "insert_subprojectArguments",
    "type": "object"
   },
   "name": "insert_subproject"
@@ -1140,7 +975,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "level_resourcesArguments",
    "type": "object"
   },
   "name": "level_resources"
@@ -1150,11 +984,9 @@
    "properties": {
     "calendar_name": {
      "default": "",
-     "title": "Calendar Name",
      "type": "string"
     }
    },
-   "title": "list_calendar_exceptionsArguments",
    "type": "object"
   },
   "name": "list_calendar_exceptions"
@@ -1162,7 +994,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "list_projectsArguments",
    "type": "object"
   },
   "name": "list_projects"
@@ -1171,11 +1002,9 @@
   "inputSchema": {
    "properties": {
     "after_unique_id": {
-     "title": "After Unique Id",
      "type": "integer"
     },
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
@@ -1183,7 +1012,6 @@
     "unique_id",
     "after_unique_id"
    ],
-   "title": "move_taskArguments",
    "type": "object"
   },
   "name": "move_task"
@@ -1193,16 +1021,9 @@
    "properties": {
     "start": {
      "default": "",
-     "title": "Start",
-     "type": "string"
-    },
-    "title": {
-     "default": "New Project",
-     "title": "Title",
      "type": "string"
     }
    },
-   "title": "new_projectArguments",
    "type": "object"
   },
   "name": "new_project"
@@ -1211,14 +1032,12 @@
   "inputSchema": {
    "properties": {
     "file_path": {
-     "title": "File Path",
      "type": "string"
     }
    },
    "required": [
     "file_path"
    ],
-   "title": "open_projectArguments",
    "type": "object"
   },
   "name": "open_project"
@@ -1227,11 +1046,9 @@
   "inputSchema": {
    "properties": {
     "predecessor_unique_id": {
-     "title": "Predecessor Unique Id",
      "type": "integer"
     },
     "successor_unique_id": {
-     "title": "Successor Unique Id",
      "type": "integer"
     }
    },
@@ -1239,7 +1056,6 @@
     "successor_unique_id",
     "predecessor_unique_id"
    ],
-   "title": "remove_predecessorArguments",
    "type": "object"
   },
   "name": "remove_predecessor"
@@ -1248,11 +1064,9 @@
   "inputSchema": {
    "properties": {
     "resource_name": {
-     "title": "Resource Name",
      "type": "string"
     },
     "task_unique_id": {
-     "title": "Task Unique Id",
      "type": "integer"
     }
    },
@@ -1260,7 +1074,6 @@
     "task_unique_id",
     "resource_name"
    ],
-   "title": "remove_resource_assignmentArguments",
    "type": "object"
   },
   "name": "remove_resource_assignment"
@@ -1269,14 +1082,12 @@
   "inputSchema": {
    "properties": {
     "fields_json": {
-     "title": "Fields Json",
      "type": "string"
     }
    },
    "required": [
     "fields_json"
    ],
-   "title": "rename_custom_fieldsArguments",
    "type": "object"
   },
   "name": "rename_custom_fields"
@@ -1286,11 +1097,9 @@
    "properties": {
     "reschedule_from": {
      "default": "",
-     "title": "Reschedule From",
      "type": "string"
     }
    },
-   "title": "reschedule_incomplete_workArguments",
    "type": "object"
   },
   "name": "reschedule_incomplete_work"
@@ -1300,16 +1109,13 @@
    "properties": {
     "all_tasks": {
      "default": true,
-     "title": "All Tasks",
      "type": "boolean"
     },
     "baseline_number": {
      "default": 0,
-     "title": "Baseline Number",
      "type": "integer"
     }
    },
-   "title": "save_baselineArguments",
    "type": "object"
   },
   "name": "save_baseline"
@@ -1317,7 +1123,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "save_projectArguments",
    "type": "object"
   },
   "name": "save_project"
@@ -1326,19 +1131,16 @@
   "inputSchema": {
    "properties": {
     "file_path": {
-     "title": "File Path",
      "type": "string"
     },
     "format": {
      "default": "mpp",
-     "title": "Format",
      "type": "string"
     }
    },
    "required": [
     "file_path"
    ],
-   "title": "save_project_asArguments",
    "type": "object"
   },
   "name": "save_project_as"
@@ -1348,18 +1150,15 @@
    "properties": {
     "include_summary": {
      "default": false,
-     "title": "Include Summary",
      "type": "boolean"
     },
     "query": {
-     "title": "Query",
      "type": "string"
     }
    },
    "required": [
     "query"
    ],
-   "title": "search_tasksArguments",
    "type": "object"
   },
   "name": "search_tasks"
@@ -1368,24 +1167,19 @@
   "inputSchema": {
    "properties": {
     "calendar_name": {
-     "title": "Calendar Name",
      "type": "string"
     },
     "finish": {
-     "title": "Finish",
      "type": "string"
     },
     "name": {
-     "title": "Name",
      "type": "string"
     },
     "start": {
-     "title": "Start",
      "type": "string"
     },
     "working": {
      "default": false,
-     "title": "Working",
      "type": "boolean"
     }
    },
@@ -1395,7 +1189,6 @@
     "start",
     "finish"
    ],
-   "title": "set_calendar_exceptionArguments",
    "type": "object"
   },
   "name": "set_calendar_exception"
@@ -1405,23 +1198,19 @@
    "properties": {
     "constraint_date": {
      "default": "",
-     "title": "Constraint Date",
      "type": "string"
     },
     "constraint_type": {
      "default": "SNET",
-     "title": "Constraint Type",
      "type": "string"
     },
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
    "required": [
     "unique_id"
    ],
-   "title": "set_constraintArguments",
    "type": "object"
   },
   "name": "set_constraint"
@@ -1430,11 +1219,9 @@
   "inputSchema": {
    "properties": {
     "deadline_date": {
-     "title": "Deadline Date",
      "type": "string"
     },
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
@@ -1442,7 +1229,6 @@
     "unique_id",
     "deadline_date"
    ],
-   "title": "set_deadlineArguments",
    "type": "object"
   },
   "name": "set_deadline"
@@ -1451,14 +1237,12 @@
   "inputSchema": {
    "properties": {
     "calendar_name": {
-     "title": "Calendar Name",
      "type": "string"
     }
    },
    "required": [
     "calendar_name"
    ],
-   "title": "set_project_calendarArguments",
    "type": "object"
   },
   "name": "set_project_calendar"
@@ -1467,14 +1251,12 @@
   "inputSchema": {
    "properties": {
     "properties_json": {
-     "title": "Properties Json",
      "type": "string"
     }
    },
    "required": [
     "properties_json"
    ],
-   "title": "set_project_propertiesArguments",
    "type": "object"
   },
   "name": "set_project_properties"
@@ -1483,11 +1265,9 @@
   "inputSchema": {
    "properties": {
     "calendar_name": {
-     "title": "Calendar Name",
      "type": "string"
     },
     "resource_name": {
-     "title": "Resource Name",
      "type": "string"
     }
    },
@@ -1495,7 +1275,6 @@
     "resource_name",
     "calendar_name"
    ],
-   "title": "set_resource_calendarArguments",
    "type": "object"
   },
   "name": "set_resource_calendar"
@@ -1505,38 +1284,31 @@
    "properties": {
     "cost_per_use": {
      "default": -1,
-     "title": "Cost Per Use",
      "type": "number"
     },
     "effective_date": {
      "default": "",
-     "title": "Effective Date",
      "type": "string"
     },
     "overtime_rate": {
      "default": "",
-     "title": "Overtime Rate",
      "type": "string"
     },
     "resource_name": {
-     "title": "Resource Name",
      "type": "string"
     },
     "standard_rate": {
      "default": "",
-     "title": "Standard Rate",
      "type": "string"
     },
     "table": {
      "default": "A",
-     "title": "Table",
      "type": "string"
     }
    },
    "required": [
     "resource_name"
    ],
-   "title": "set_resource_rate_tableArguments",
    "type": "object"
   },
   "name": "set_resource_rate_table"
@@ -1546,18 +1318,15 @@
    "properties": {
     "active": {
      "default": true,
-     "title": "Active",
      "type": "boolean"
     },
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
    "required": [
     "unique_id"
    ],
-   "title": "set_task_activeArguments",
    "type": "object"
   },
   "name": "set_task_active"
@@ -1566,11 +1335,9 @@
   "inputSchema": {
    "properties": {
     "calendar_name": {
-     "title": "Calendar Name",
      "type": "string"
     },
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
@@ -1578,7 +1345,6 @@
     "unique_id",
     "calendar_name"
    ],
-   "title": "set_task_calendarArguments",
    "type": "object"
   },
   "name": "set_task_calendar"
@@ -1588,20 +1354,16 @@
    "properties": {
     "sub_address": {
      "default": "",
-     "title": "Sub Address",
      "type": "string"
     },
     "text": {
      "default": "",
-     "title": "Text",
      "type": "string"
     },
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     },
     "url": {
-     "title": "Url",
      "type": "string"
     }
    },
@@ -1609,7 +1371,6 @@
     "unique_id",
     "url"
    ],
-   "title": "set_task_hyperlinkArguments",
    "type": "object"
   },
   "name": "set_task_hyperlink"
@@ -1619,18 +1380,15 @@
    "properties": {
     "manual": {
      "default": true,
-     "title": "Manual",
      "type": "boolean"
     },
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
    "required": [
     "unique_id"
    ],
-   "title": "set_task_modeArguments",
    "type": "object"
   },
   "name": "set_task_mode"
@@ -1639,15 +1397,12 @@
   "inputSchema": {
    "properties": {
     "calendar_name": {
-     "title": "Calendar Name",
      "type": "string"
     },
     "day": {
-     "title": "Day",
      "type": "integer"
     },
     "shifts_json": {
-     "title": "Shifts Json",
      "type": "string"
     }
    },
@@ -1656,7 +1411,6 @@
     "day",
     "shifts_json"
    ],
-   "title": "set_working_hoursArguments",
    "type": "object"
   },
   "name": "set_working_hours"
@@ -1665,11 +1419,9 @@
   "inputSchema": {
    "properties": {
     "path_a": {
-     "title": "Path A",
      "type": "string"
     },
     "path_b": {
-     "title": "Path B",
      "type": "string"
     }
    },
@@ -1677,7 +1429,6 @@
     "path_a",
     "path_b"
    ],
-   "title": "snapshot_diffArguments",
    "type": "object"
   },
   "name": "snapshot_diff"
@@ -1687,18 +1438,15 @@
    "properties": {
     "include_resources": {
      "default": true,
-     "title": "Include Resources",
      "type": "boolean"
     },
     "output_path": {
-     "title": "Output Path",
      "type": "string"
     }
    },
    "required": [
     "output_path"
    ],
-   "title": "snapshot_to_jsonArguments",
    "type": "object"
   },
   "name": "snapshot_to_json"
@@ -1707,14 +1455,12 @@
   "inputSchema": {
    "properties": {
     "name_or_index": {
-     "title": "Name Or Index",
      "type": "string"
     }
    },
    "required": [
     "name_or_index"
    ],
-   "title": "switch_projectArguments",
    "type": "object"
   },
   "name": "switch_project"
@@ -1724,11 +1470,9 @@
    "properties": {
     "count": {
      "default": 1,
-     "title": "Count",
      "type": "integer"
     }
    },
-   "title": "undo_lastArguments",
    "type": "object"
   },
   "name": "undo_last"
@@ -1737,11 +1481,9 @@
   "inputSchema": {
    "properties": {
     "fields_json": {
-     "title": "Fields Json",
      "type": "string"
     },
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
@@ -1749,7 +1491,6 @@
     "unique_id",
     "fields_json"
    ],
-   "title": "update_custom_fieldsArguments",
    "type": "object"
   },
   "name": "update_custom_fields"
@@ -1758,19 +1499,16 @@
   "inputSchema": {
    "properties": {
     "complete_through": {
-     "title": "Complete Through",
      "type": "string"
     },
     "set_0_or_100": {
      "default": false,
-     "title": "Set 0 Or 100",
      "type": "boolean"
     }
    },
    "required": [
     "complete_through"
    ],
-   "title": "update_projectArguments",
    "type": "object"
   },
   "name": "update_project"
@@ -1780,33 +1518,27 @@
    "properties": {
     "cost_per_use": {
      "default": -1,
-     "title": "Cost Per Use",
      "type": "number"
     },
     "max_units": {
      "default": -1,
-     "title": "Max Units",
      "type": "number"
     },
     "new_name": {
      "default": "",
-     "title": "New Name",
      "type": "string"
     },
     "resource_name": {
-     "title": "Resource Name",
      "type": "string"
     },
     "standard_rate": {
      "default": "",
-     "title": "Standard Rate",
      "type": "string"
     }
    },
    "required": [
     "resource_name"
    ],
-   "title": "update_resourceArguments",
    "type": "object"
   },
   "name": "update_resource"
@@ -1816,83 +1548,67 @@
    "properties": {
     "duration_days": {
      "default": -1,
-     "title": "Duration Days",
      "type": "integer"
     },
     "finish": {
      "default": "",
-     "title": "Finish",
      "type": "string"
     },
     "flag1": {
      "default": null,
-     "title": "Flag1",
      "type": "boolean"
     },
     "flag2": {
      "default": null,
-     "title": "Flag2",
      "type": "boolean"
     },
     "manual": {
      "default": null,
-     "title": "Manual",
      "type": "boolean"
     },
     "name": {
      "default": "",
-     "title": "Name",
      "type": "string"
     },
     "notes": {
      "default": "",
-     "title": "Notes",
      "type": "string"
     },
     "percent_complete": {
      "default": -1,
-     "title": "Percent Complete",
      "type": "integer"
     },
     "priority": {
      "default": -1,
-     "title": "Priority",
      "type": "integer"
     },
     "rag": {
      "default": "",
-     "title": "Rag",
      "type": "string"
     },
     "start": {
      "default": "",
-     "title": "Start",
      "type": "string"
     },
     "task_type": {
      "default": "",
-     "title": "Task Type",
      "type": "string"
     },
     "text2": {
      "default": "",
-     "title": "Text2",
      "type": "string"
     },
     "text3": {
      "default": "",
-     "title": "Text3",
      "type": "string"
     },
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
    "required": [
     "unique_id"
    ],
-   "title": "update_taskArguments",
    "type": "object"
   },
   "name": "update_task"
@@ -1900,7 +1616,6 @@
  {
   "inputSchema": {
    "properties": {},
-   "title": "validate_scheduleArguments",
    "type": "object"
   },
   "name": "validate_schedule"
@@ -1910,18 +1625,15 @@
    "properties": {
     "delay_days": {
      "default": 5,
-     "title": "Delay Days",
      "type": "integer"
     },
     "unique_id": {
-     "title": "Unique Id",
      "type": "integer"
     }
    },
    "required": [
     "unique_id"
    ],
-   "title": "what_if_delayArguments",
    "type": "object"
   },
   "name": "what_if_delay"

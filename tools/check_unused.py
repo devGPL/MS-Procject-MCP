@@ -29,7 +29,9 @@ Exit code 0 when nothing is flagged, 1 otherwise.
 """
 
 import ast
+import glob
 import io
+import os
 import re
 import sys
 
@@ -89,6 +91,31 @@ def check_file(path):
     return problems
 
 
+
+def modulos_nao_declarados():
+    """Top-level modules in the repo that pyproject does not declare.
+
+    An editable install maps only what py-modules lists, so a module can sit
+    right beside the others and still fail to import once installed. Running
+    from the source directory hides it completely -- which is how msp_fast
+    reached a machine and broke startup with ModuleNotFoundError while the
+    file was plainly there.
+    """
+    try:
+        import tomllib
+    except ImportError:
+        return []
+    if not os.path.exists("pyproject.toml"):
+        return []
+    with open("pyproject.toml", "rb") as fp:
+        dados = tomllib.load(fp)
+    declarados = set(dados.get("tool", {}).get("setuptools", {}).get("py-modules", []))
+    if not declarados:
+        return []
+    presentes = {f[:-3] for f in glob.glob("msp_*.py")} | {"server"}
+    return sorted(presentes - declarados)
+
+
 def main(argv):
     paths = argv[1:]
     if not paths:
@@ -107,9 +134,15 @@ def main(argv):
             print(message)
         total += len(problems)
 
+    for mod in modulos_nao_declarados():
+        print("pyproject.toml: module '%s.py' exists but is not in py-modules "
+              "-- it will not import from an installed copy" % mod)
+        total += 1
+
     print(f"UNUSED TOTAL: {total}")
     return 1 if total else 0
 
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
+

@@ -184,9 +184,20 @@ def get_critical_path() -> str:
             probe = _probe_de_dicts(lidas)
             results = [d for d in lidas if d.get("critical")]
         except Exception as exc:
-            # A parse failure must not fail the tool -- COM still works.
-            origem = {"backend": "com",
-                      "reason": "fast path failed, fell back: %s" % str(exc)[:140]}
+            # A parse failure must not fail the tool -- COM still works. But it
+            # must not hide either: an exception here is a defect, not the
+            # documented case of the fast path being unavailable, and the two
+            # look identical from outside. This one is flagged loudly, because
+            # a fallback that silently degrades is how a change that delivers
+            # nothing still looks like it works.
+            origem = {
+                "backend": "com",
+                "reason": "fast path RAISED and fell back: %s: %s"
+                          % (type(exc).__name__, str(exc)[:140]),
+                "action_required": "This is a bug, not a configuration. The "
+                                   "answer below is correct but was produced "
+                                   "the slow way; report the error above.",
+            }
             results = None
 
     if results is None:

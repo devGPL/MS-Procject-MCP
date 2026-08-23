@@ -4,31 +4,47 @@ Guidance for AI coding agents (Claude Code, OpenAI Codex, etc.) working in this 
 
 ## What this is
 
-**MS Project MCP Server** — a single-file Python MCP server (`server.py`, ~5,200 lines, 99 tools) that drives a **live Microsoft Project desktop application via Windows COM automation** (pywin32). It is NOT a file parser: there is no mpxj, no Java, no JVM anywhere. All reads and writes go through MS Project's own COM API (`win32com.client`), so `.mpp` save/load works natively.
+**MS Project MCP Server** — a Python MCP server (11 modules, ~6,500 lines, 99 tools) that drives a **live Microsoft Project desktop application via Windows COM automation** (pywin32). Every write, and every read that needs the application's own state, goes through MS Project's COM API (`win32com.client`), so `.mpp` save/load works natively.
+
+Reads have a second path. Sixteen scanning tools parse the SAVED `.mpp` with `mpxj` (JVM, via `jpype`) when it is installed and the file is reachable, because obtaining a task object over COM costs 2.635 ms against 0.240 ms to read a property — 83% of a scan spent before a field is read. Every such response carries a `source` block saying which path answered. See `msp_fast.py`, whose header explains the tradeoff, and the README section "Dois caminhos de leitura".
 
 **Hard platform constraint: Windows only, with Microsoft Project installed (tested on 16.0).** The server cannot run on macOS/Linux. Development/editing of the code can happen anywhere; execution and tests require Windows + MS Project.
 
 ## Repo layout
 
 ```
-server.py          # Everything: FastMCP server "MS Project", all 99 tools, helpers
-tests/             # 7 live-integration suites (202 tests), one per feature phase
-README.md          # Authoritative docs: tool inventory, install, test commands
-CONTRIBUTING.md    # Code conventions + PR flow (its Testing section is STALE — trust README)
+server.py             # Entry point only: imports the tool modules, runs the server
+msp_core.py           # COM boundary: get_app/get_proj, task_to_dict, VistaCOM, helpers
+msp_fast.py           # The other reader: parses the saved .mpp with mpxj
+msp_projects.py       # 17 tools — file lifecycle, multi-project, import/export
+msp_tasks_read.py     # 17 tools — listings, filters, roll-ups, CSV
+msp_tasks_write.py    # 19 tools — task CRUD, modes, constraints, deadlines
+msp_dependencies.py   #  5 tools — links between tasks
+msp_resources.py      # 11 tools — pool, assignments, availability, rate tables
+msp_calendars.py      # 10 tools — base calendars, exceptions, working hours
+msp_schedule.py       # 11 tools — critical path, slack, validation, leveling
+msp_baselines_costs.py#  6 tools — baselines, variance, earned value, cost
+msp_customfields.py   #  3 tools — Text/Number/Date/Flag/Duration fields
+tests/                # 7 live-integration suites + 2 backend-parity suites
+tools/                # Offline gates: ./tools/gates.sh, no Windows needed
+README.md             # Authoritative docs: tool inventory, install, test commands
+CONTRIBUTING.md       # Code conventions + PR flow (its Testing section is STALE — trust README)
 ```
 
-There is no `requirements.txt`, no packaging, no env vars, no config files. Full install:
+Packaged with `pyproject.toml`; no env vars, no config files. Full install:
 
 ```bash
-pip install mcp pywin32 python-dateutil
+pip install -e .            # mcp, pywin32 (Windows only), python-dateutil
+pip install -e ".[fast]"    # adds mpxj + jpype1 for the fast read path
 ```
 
-(`python-dateutil` is optional — only `add_recurring_task` imports it, lazily.)
+`jpype1` publishes no wheel for Windows on ARM, and needs Java 9+. Without it every read falls back to COM and says so — correct, and slow.
 
 ## Running / registering the server
 
-- Standalone: `python server.py` (stdio transport, FastMCP default). Prints a banner; MS Project should be running with a file open (or use `open_project`/`new_project`, which auto-launch it via `Dispatch`).
-- Claude Desktop (`claude_desktop_config.json`) — also shown in a comment at the bottom of server.py:
+- Standalone: `msproject-mcp`, or `python server.py` (stdio transport, FastMCP default). Prints a banner; MS Project should be running with a file open (or use `open_project`/`new_project`, which auto-launch it via `Dispatch`).
+- **The server must start from the Windows desktop session, unelevated.** Three separate conditions produce the same attach failure, and running as administrator -- the instinct on an access error -- is one of them. `msp_core.get_app()` documents all three.
+- Claude Desktop (`claude_desktop_config.json`):
   ```json
   { "mcpServers": { "msproject": { "command": "python", "args": ["C:/path/to/server.py"] } } }
   ```
@@ -40,12 +56,14 @@ pip install mcp pywin32 python-dateutil
   args = ["C:/path/to/server.py"]
   ```
 
-## Architecture (all in server.py)
+## Architecture
 
-- **No Python-side state.** State lives entirely in the running MS Project instance. `get_app(require_project=True)` (line ~19) attaches via `GetActiveObject("MSProject.Application")` and raises if MS Project isn't running / no project open. Every tool operates on `app.ActiveProject`.
+- **No Python-side state.** State lives entirely in the running MS Project instance (and, for the fast path, in the saved file). `get_app(require_project=True)` attaches via `GetActiveObject("MSProject.Application")` and raises if MS Project isn't running / no project open. Every COM tool operates on `app.ActiveProject`.
+- **`msp_core.py` is the COM boundary.** No tool module talks to Microsoft Project without it, and every `import win32com` sits INSIDE a function body — which is why the modules import cleanly on macOS/Linux and the gates in `tools/` can check tool registration without Windows.
 - **Tool = `@mcp.tool()` function returning a JSON string** (`json.dumps(..., indent=2)`). Errors are returned as `{"error": "..."}` JSON, never raised. Docstrings become MCP tool descriptions — keep them accurate.
-- **Helpers (lines 19–181):** `get_app`/`get_proj`, `_parse_date` (strict `YYYY-MM-DD`), `_fmt_date`, `_to_naive` (strips tzinfo from COM datetimes before comparing to `datetime.now()`), `_find_task` (linear scan by UniqueID), `_get_mpd` (MinutesPerDay, fallback 480), `_custom_field_id` (maps "Text5"/"Number1"/"Flag3"/"Date1"/"Duration2" → pjCustomTask COM field IDs), `task_to_dict` (~35-field task dict).
-- **File sections** are marked with `# ---` banner comments naming the phase (Phase 3 … Phase 7). README's phase table (25 → 44 → 65 → 79 → 96 → 99 tools) maps the file's growth.
+- **Each module's header states the rule that decides what belongs in it.** Read it before moving a tool; several placements look wrong and are deliberate (`set_task_calendar` lives with calendars, `export_csv` with task reads).
+- **Core helpers:** `get_app`/`get_proj`, `_com_retry` (retries the busy-application errors), `calculo_suspenso` (context manager for bulk writes), `_parse_date` (strict `YYYY-MM-DD`), `_fmt_date`, `_dia`/`_dt_de_vista` (view date fields), `_to_naive`, `_find_task`, `_uid_map`, `_get_mpd` (MinutesPerDay, fallback 480), `_custom_field_id`, `task_to_dict` (35-field task dict).
+- **One table of field readers.** `_LEITORES_TAREFA` in `msp_core` defines the 35 published task fields once. `task_to_dict` materialises all of them; `VistaCOM` evaluates one at a time on demand and caches. A scanning tool is written against key names and either backend serves it: `msp_fast.varredura(proj)` returns parsed dicts or `None`, plus the `source` block, and the body reads `v["critical"]` either way. Do NOT "simplify" that by calling `task_to_dict` on the COM side — it costs 35 property reads where a tool needs three, which on the ARM VM (the only path available there) turns a ~32s scan into ~92s.
 
 ## API conventions (essential for both editing code and calling tools)
 
@@ -96,6 +114,23 @@ python tests/test_phase6.py      # 75 — calendars, timephased, variance, rate 
 python tests/test_phase7.py      # 57 — critical path intelligence
 ```
 
+Two suites are about the two read paths, and one of them needs nothing:
+
+```bash
+python tests/test_vistas_paridade.py   # 80 — runs on macOS, no MS Project
+python tests/test_backend_parity.py    # needs Windows + a SAVED project
+```
+
+`test_vistas_paridade.py` runs each converted tool twice over a fake project — once forced down COM, once handed the parsed list — and requires identical output. It proves the two BODIES agree; that mpxj and Microsoft Project read the same file the same way is what `test_backend_parity.py` proves, and that one has never run (the dev VM is ARM64).
+
+Before any commit, run the offline gates — no Windows, no MS Project, 0.43s:
+
+```bash
+./tools/gates.sh
+```
+
+They catch a name loaded with nothing defining it, a tool missing from the registry, and a dead import or orphan banner. Adding or removing a tool on purpose means regenerating the baseline: `python3 tools/snap_tools.py . tools/baseline_tools.json`.
+
 - No pytest — plain asyncio scripts calling tools **in-process** via `await mcp.call_tool(name, kwargs)` on the imported FastMCP instance.
 - Phases 4–7 exit non-zero on failure; earlier suites always exit 0 (read the printed summary).
 - **New tests: follow the phase 6–7 style** — `from server import mcp` (sys.path insert), kwargs-style `call()` wrapped in try/except so COM errors register as FAIL, `ok()`/`skip()` helpers, boxed summary, `sys.exit(0 if FAIL == 0 else 1)`.
@@ -104,6 +139,7 @@ python tests/test_phase7.py      # 57 — critical path intelligence
 
 ## Making changes
 
-- All code goes in `server.py`; keep the phase-banner section structure. New tool = `@mcp.tool()` + docstring + `get_app()`/`get_proj()` + JSON-string return + `{"error": ...}` on failure + `FileSave()` if mutating + a test in the matching `tests/test_phaseN.py` + README tool-inventory update.
+- A new tool goes in the module whose header rule covers it = `@mcp.tool()` + docstring + `get_app()`/`get_proj()` + JSON-string return + `{"error": ...}` on failure + `FileSave()` if mutating + a test in the matching `tests/test_phaseN.py` + README tool-inventory update + `./tools/gates.sh` + a regenerated `tools/baseline_tools.json`.
+- A new tool that SCANS every task should read through `msp_fast.varredura` and a view rather than walking `proj.Tasks` directly, and must publish the `source` block. Add it to `tests/test_vistas_paridade.py`, which will fail if the two backends disagree.
 - Branch naming: `feature/your-feature-name`. Clear commit messages; no strict commit convention.
 - When adding date logic, go through `_parse_date`/`_fmt_date`/`_to_naive` — never compare aware COM datetimes to naive `datetime.now()` directly.

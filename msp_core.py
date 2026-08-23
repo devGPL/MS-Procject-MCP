@@ -232,16 +232,35 @@ def _safe(read, default=None):
 # Which readers are wrapped in _safe() is deliberate and unchanged: the
 # unguarded ones are the properties every task has, and a failure there is a
 # broken COM reference rather than a field that does not apply.
+# WHICH READS ARE GUARDED, AND WHY NOT ALL OF THEM
+#
+# _safe turns a COM failure into a default. That is right for a field whose
+# default already means "absent" -- no date, no note, no resource -- and wrong
+# for a field where the default would be a CLAIM. Three groups stay unguarded
+# on purpose:
+#
+#   identity    unique_id, id, name -- a task published under a made-up
+#               identity is worse than a task that fails to be published.
+#   structure   outline_level, summary -- the WBS tree is built by nesting on
+#               these. A default reshapes the tree instead of failing, and the
+#               caller gets a plausible hierarchy that is not the project's.
+#   measurement percent_complete, duration_days -- 0 here is a reading, not an
+#               absence. Defaulting to it says "not started" and "no work",
+#               which validate_schedule then reports as findings of its own.
+#
+# For those a com_error should reach the caller. Everywhere else it should not
+# take the whole scan down with it: before this, one unreadable Finish on one
+# task out of 8,429 failed the entire tool.
 _LEITORES_TAREFA = {
     "unique_id":              lambda t, mpd: t.UniqueID,
     "id":                     lambda t, mpd: t.ID,
     "name":                   lambda t, mpd: t.Name,
     "outline_level":          lambda t, mpd: t.OutlineLevel,
-    "wbs":                    lambda t, mpd: t.WBS,
+    "wbs":                    lambda t, mpd: _safe(lambda: t.WBS, ""),
     "summary":                lambda t, mpd: bool(t.Summary),
-    "milestone":              lambda t, mpd: bool(t.Milestone),
-    "start":                  lambda t, mpd: _fmt_com(t.Start),
-    "finish":                 lambda t, mpd: _fmt_com(t.Finish),
+    "milestone":              lambda t, mpd: bool(_safe(lambda: t.Milestone, False)),
+    "start":                  lambda t, mpd: _fmt_com(_safe(lambda: t.Start)),
+    "finish":                 lambda t, mpd: _fmt_com(_safe(lambda: t.Finish)),
     "duration_days":          lambda t, mpd: round(t.Duration / mpd, 2) if t.Duration else 0,
     "percent_complete":       lambda t, mpd: t.PercentComplete,
     "actual_start":           lambda t, mpd: _fmt_com(_safe(lambda: t.ActualStart)),
@@ -255,17 +274,17 @@ _LEITORES_TAREFA = {
     "constraint_date":        lambda t, mpd: _fmt_com(_safe(lambda: t.ConstraintDate)),
     "manual":                 lambda t, mpd: bool(_safe(lambda: t.Manual, False)),
     "type":                   lambda t, mpd: TASK_TYPE_NAMES.get(_safe(lambda: t.Type, 0), "FixedUnits"),
-    "predecessors":           lambda t, mpd: t.Predecessors,
-    "resource_names":         lambda t, mpd: t.ResourceNames,
-    "notes":                  lambda t, mpd: t.Notes,
-    "critical":               lambda t, mpd: bool(t.Critical),
-    "active":                 lambda t, mpd: bool(t.Active),
-    "rag":                    lambda t, mpd: t.Text1 or "",
-    "text1":                  lambda t, mpd: t.Text1 or "",
-    "text2":                  lambda t, mpd: t.Text2 or "",
-    "text3":                  lambda t, mpd: t.Text3 or "",
-    "flag1":                  lambda t, mpd: bool(t.Flag1),
-    "flag2":                  lambda t, mpd: bool(t.Flag2),
+    "predecessors":           lambda t, mpd: _safe(lambda: t.Predecessors, ""),
+    "resource_names":         lambda t, mpd: _safe(lambda: t.ResourceNames, ""),
+    "notes":                  lambda t, mpd: _safe(lambda: t.Notes, ""),
+    "critical":               lambda t, mpd: bool(_safe(lambda: t.Critical, False)),
+    "active":                 lambda t, mpd: bool(_safe(lambda: t.Active, True)),
+    "rag":                    lambda t, mpd: _safe(lambda: t.Text1, "") or "",
+    "text1":                  lambda t, mpd: _safe(lambda: t.Text1, "") or "",
+    "text2":                  lambda t, mpd: _safe(lambda: t.Text2, "") or "",
+    "text3":                  lambda t, mpd: _safe(lambda: t.Text3, "") or "",
+    "flag1":                  lambda t, mpd: bool(_safe(lambda: t.Flag1, False)),
+    "flag2":                  lambda t, mpd: bool(_safe(lambda: t.Flag2, False)),
     "hyperlink":              lambda t, mpd: _safe(lambda: t.HyperlinkAddress, "") or "",
     "hyperlink_text":         lambda t, mpd: _safe(lambda: t.Hyperlink, "") or "",
 }

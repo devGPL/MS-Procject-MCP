@@ -204,10 +204,21 @@ def _dias(t, metodo):
         return 0
 
 
-def _dt(t, metodo, tamanho=19):
+def _dt(t, metodo):
+    """Date in the same shape the COM path produces: 'YYYY-MM-DD HH:MM:SS'.
+
+    mpxj renders a LocalDateTime without seconds when they are zero, so the
+    two readers disagreed on every dated field until this padded them. The
+    format is part of the contract, not a detail.
+    """
     try:
         v = getattr(t, metodo)()
-        return str(v)[:tamanho].replace("T", " ") if v is not None else None
+        if v is None:
+            return None
+        texto = str(v).replace("T", " ")[:19]
+        if len(texto) == 16:      # 'YYYY-MM-DD HH:MM'
+            texto += ":00"
+        return texto if len(texto) >= 10 and texto[:4].isdigit() else None
     except Exception:
         return None
 

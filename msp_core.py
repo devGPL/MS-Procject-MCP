@@ -186,10 +186,25 @@ def task_to_dict(t, mpd):
     """
 
     def fmt(dt):
+        """Format a COM date, or None when there is no date.
+
+        MS Project returns a locale-dependent sentinel for an empty date --
+        "ND" on a Portuguese install, "NA" on an English one -- and the old
+        code passed it straight through, so a task with no deadline came back
+        as {"deadline": "ND"}. A client reading that sees a value where there
+        is none, and the string it sees depends on the language of the machine
+        the server happens to run on.
+
+        Anything that does not start with a four-digit year is treated as
+        "no date", which covers both sentinels without hardcoding either.
+        """
         try:
             if dt is None:
                 return None
-            return str(dt)[:19]
+            texto = str(dt)[:19]
+            if len(texto) < 10 or not texto[:4].isdigit():
+                return None
+            return texto
         except Exception:
             return None
 

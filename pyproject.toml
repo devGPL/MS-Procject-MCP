@@ -58,6 +58,7 @@ Repository = "https://github.com/devGPL/MS-Procject-MCP"
 py-modules = [
     "server",
     "msp_core",
+    "msp_fast",
     "msp_projects",
     "msp_tasks_read",
     "msp_tasks_write",

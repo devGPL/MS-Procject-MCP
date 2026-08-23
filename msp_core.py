@@ -22,6 +22,7 @@ pass where production fails. Confirm on Windows before trusting any offline
 suite as proof of COM behaviour.
 """
 
+import contextlib
 import datetime
 from mcp.server.fastmcp import FastMCP
 
@@ -83,6 +84,40 @@ def _com_retry(chamada, tentativas=4, espera=0.4):
             if tentativa < tentativas - 1:
                 time.sleep(espera * (2 ** tentativa))
     raise ultima
+
+
+
+@contextlib.contextmanager
+def calculo_suspenso(app):
+    """Suspend Microsoft Project's recalculation for the duration of a batch.
+
+    Changing a task normally triggers a recalculation of the whole dependency
+    network. Doing that once per item turns a batch of N changes over M tasks
+    into N recalculations -- quadratic, and it dominates everything else.
+
+    Measured: converting 8,243 tasks from manual to automatic scheduling ran
+    for tens of minutes at 100% of a core, because each conversion rescheduled
+    the network the previous ones had just built.
+
+    Restores the setting in a finally, so an exception mid-batch cannot leave
+    the application with calculation switched off -- which would silently stop
+    it updating for the user afterwards.
+    """
+    suspendeu = False
+    try:
+        app.Calculation = 0
+        suspendeu = True
+    except Exception:
+        pass
+    try:
+        yield
+    finally:
+        if suspendeu:
+            try:
+                app.Calculation = -1
+            except Exception:
+                pass
+
 
 
 def get_app(require_project=True):

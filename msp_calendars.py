@@ -220,6 +220,11 @@ def set_task_calendar(unique_id: int, calendar_name: str) -> str:
     except Exception as e:
         return json.dumps({"error": f"Failed to set task calendar: {e}"})
 
+    try:
+        app.FileSave()
+    except Exception:
+        pass
+
     return json.dumps({
         "status":    "updated",
         "unique_id": unique_id,
@@ -264,6 +269,11 @@ def create_calendar(name: str, copy_from: str = "Standard") -> str:
 
     # Re-read calendar list
     calendars = _calendar_names(proj)
+
+    try:
+        app.FileSave()
+    except Exception:
+        pass
 
     return json.dumps({
         "status":     "created",

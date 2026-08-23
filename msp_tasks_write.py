@@ -27,6 +27,7 @@ finally. Each pair is wholly inside one function; never slice one apart.
 import json
 
 from msp_core import (
+    calculo_suspenso,
     _uid_map,
     mcp,
     get_app,
@@ -145,14 +146,15 @@ def bulk_update_rag(updates: str) -> str:
     uid_map = _uid_map(proj)
 
     results = []
-    for item in items:
-        uid = item["unique_id"]
-        rag = item["rag"]
-        if uid in uid_map:
-            uid_map[uid].Text1 = rag
-            results.append({"unique_id": uid, "status": "updated", "rag": rag})
-        else:
-            results.append({"unique_id": uid, "status": "not_found"})
+    with calculo_suspenso(app):
+        for item in items:
+            uid = item["unique_id"]
+            rag = item["rag"]
+            if uid in uid_map:
+                uid_map[uid].Text1 = rag
+                results.append({"unique_id": uid, "status": "updated", "rag": rag})
+            else:
+                results.append({"unique_id": uid, "status": "not_found"})
 
     app.FileSave()
     return json.dumps({"updated": len([r for r in results if r["status"] == "updated"]),
@@ -424,29 +426,30 @@ def bulk_set_task_mode(updates_json: str) -> str:
 
     updated = 0
 
-    if isinstance(data, dict) and "scope" in data:
-        manual = data.get("mode", "manual").lower() == "manual"
-        scope  = data.get("scope", "all").lower()
+    with calculo_suspenso(app):
+        if isinstance(data, dict) and "scope" in data:
+            manual = data.get("mode", "manual").lower() == "manual"
+            scope  = data.get("scope", "all").lower()
 
-        for t in proj.Tasks:
-            if t is None:
-                continue
-            if scope == "all":
-                t.Manual = manual; updated += 1
-            elif scope == "summary" and t.Summary:
-                t.Manual = manual; updated += 1
-            elif scope == "non_summary" and not t.Summary:
-                t.Manual = manual; updated += 1
+            for t in proj.Tasks:
+                if t is None:
+                    continue
+                if scope == "all":
+                    t.Manual = manual; updated += 1
+                elif scope == "summary" and t.Summary:
+                    t.Manual = manual; updated += 1
+                elif scope == "non_summary" and not t.Summary:
+                    t.Manual = manual; updated += 1
 
-    else:
-        items = data if isinstance(data, list) else [data]
-        uid_map = _uid_map(proj)
-        for item in items:
-            uid = item["unique_id"]
-            t = uid_map.get(uid)
-            if t is not None:
-                t.Manual = item.get("manual", True)
-                updated += 1
+        else:
+            items = data if isinstance(data, list) else [data]
+            uid_map = _uid_map(proj)
+            for item in items:
+                uid = item["unique_id"]
+                t = uid_map.get(uid)
+                if t is not None:
+                    t.Manual = item.get("manual", True)
+                    updated += 1
 
     app.FileSave()
     return json.dumps({"updated": updated}, indent=2)
@@ -847,24 +850,30 @@ def bulk_set_deadlines(deadlines_json: str) -> str:
     # One traversal for the whole batch instead of one per item.
     uid_map = _uid_map(proj)
 
-    for item in items:
-        uid = item["unique_id"]
-        dd  = item["deadline_date"]
+    with calculo_suspenso(app):
+        for item in items:
+            uid = item["unique_id"]
+            dd  = item["deadline_date"]
 
-        t = uid_map.get(uid)
-        if t is None:
-            not_found.append(uid)
-            continue
+            t = uid_map.get(uid)
+            if t is None:
+                not_found.append(uid)
+                continue
 
-        try:
-            if dd.lower() == "clear":
-                t.Deadline = "NA"
-                cleared += 1
-            else:
-                t.Deadline = _parse_date(dd)
-                set_count += 1
-        except Exception as e:
-            errors.append({"unique_id": uid, "error": str(e)})
+            try:
+                if dd.lower() == "clear":
+                    t.Deadline = "NA"
+                    cleared += 1
+                else:
+                    t.Deadline = _parse_date(dd)
+                    set_count += 1
+            except Exception as e:
+                errors.append({"unique_id": uid, "error": str(e)})
+
+    try:
+        app.FileSave()
+    except Exception:
+        pass
 
     return json.dumps({
         "set":       set_count,

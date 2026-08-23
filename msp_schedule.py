@@ -18,6 +18,8 @@ first in its own docstring.
 import json
 import datetime
 
+import msp_fast
+
 from msp_core import (
     mcp,
     get_app,
@@ -141,6 +143,29 @@ def _network_warning(probe, o_que):
     )
 
 
+
+def _probe_de_dicts(tarefas):
+    """Same probe, computed from parsed dicts instead of COM objects.
+
+    No sampling ceiling here: the ceiling exists to stop paying for COM reads,
+    and these are dictionary lookups. Counting all of them is free and gives
+    exact numbers instead of ">= 200".
+    """
+    probe = _new_probe()
+    probe["probing"] = True
+    for d in tarefas:
+        probe["detail"] += 1
+        tem_pred = bool(d.get("predecessors"))
+        eh_manual = bool(d.get("manual"))
+        if tem_pred:
+            probe["linked"] += 1
+        if eh_manual:
+            probe["manual"] += 1
+        if tem_pred and not eh_manual:
+            probe["auto_linked"] += 1
+    return probe
+
+
 @mcp.tool()
 def get_critical_path() -> str:
     """Return all tasks on the critical path (non-summary)."""
@@ -148,17 +173,47 @@ def get_critical_path() -> str:
     proj = get_proj(app)
     mpd = _get_mpd(proj)
 
-    results = []
-    probe = _new_probe()
-    for t in proj.Tasks:
-        if t is None or t.Summary:
-            continue
-        _probe_link(probe, t)
-        if t.Critical:
-            results.append(task_to_dict(t, mpd))
+    # Fast path first: parsing the saved file walks 8,000+ tasks in under a
+    # second where COM needs half a minute. contexto() decides per call and
+    # explains itself; anything it cannot verify sends us to COM.
+    usar_arquivo, caminho, origem = msp_fast.contexto(proj)
+    results = None
+    if usar_arquivo:
+        try:
+            lidas = msp_fast.tarefas(msp_fast.ler(caminho))
+            probe = _probe_de_dicts(lidas)
+            results = [d for d in lidas if d.get("critical")]
+        except Exception as exc:
+            # A parse failure must not fail the tool -- COM still works. But it
+            # must not hide either: an exception here is a defect, not the
+            # documented case of the fast path being unavailable, and the two
+            # look identical from outside. This one is flagged loudly, because
+            # a fallback that silently degrades is how a change that delivers
+            # nothing still looks like it works.
+            origem = {
+                "backend": "com",
+                "reason": "fast path RAISED and fell back: %s: %s"
+                          % (type(exc).__name__, str(exc)[:140]),
+                "action_required": "This is a bug, not a configuration. The "
+                                   "answer below is correct but was produced "
+                                   "the slow way; report the error above.",
+            }
+            results = None
+
+    if results is None:
+        mpd = _get_mpd(proj)
+        results = []
+        probe = _new_probe()
+        for t in proj.Tasks:
+            if t is None or t.Summary:
+                continue
+            _probe_link(probe, t)
+            if t.Critical:
+                results.append(task_to_dict(t, mpd))
 
     saida = {
         "count": len(results),
+        "source": origem,
         "diagnostics": _probe_report(probe),
         "tasks": results,
     }
@@ -439,6 +494,11 @@ def calculate_project() -> str:
     """
     app = get_app()
     app.CalculateProject()
+    try:
+        app.FileSave()
+    except Exception:
+        pass
+
     return json.dumps({"status": "calculated", "project": app.ActiveProject.Name})
 
 

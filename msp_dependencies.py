@@ -13,6 +13,7 @@ result.
 import json
 
 from msp_core import (
+    calculo_suspenso,
     _uid_map,
     _uid_to_id_map,
     mcp,
@@ -101,37 +102,38 @@ def bulk_add_predecessors(links_json: str) -> str:
     linked = 0
     errors = []
 
-    for link in links:
-        succ_uid = link["successor_unique_id"]
-        pred_uid = link["predecessor_unique_id"]
-        lt       = link.get("link_type", "FS")
-        lag      = link.get("lag_days", 0)
+    with calculo_suspenso(app):
+        for link in links:
+            succ_uid = link["successor_unique_id"]
+            pred_uid = link["predecessor_unique_id"]
+            lt       = link.get("link_type", "FS")
+            lag      = link.get("lag_days", 0)
 
-        if succ_uid not in uid_to_id:
-            errors.append({"successor_unique_id": succ_uid, "error": "not found"})
-            continue
-        if pred_uid not in uid_to_id:
-            errors.append({"predecessor_unique_id": pred_uid, "error": "not found"})
-            continue
+            if succ_uid not in uid_to_id:
+                errors.append({"successor_unique_id": succ_uid, "error": "not found"})
+                continue
+            if pred_uid not in uid_to_id:
+                errors.append({"predecessor_unique_id": pred_uid, "error": "not found"})
+                continue
 
-        pred_id   = uid_to_id[pred_uid]
-        succ_task = uid_to_task[succ_uid]
+            pred_id   = uid_to_id[pred_uid]
+            succ_task = uid_to_task[succ_uid]
 
-        lag_str = ""
-        if lag > 0:
-            lag_str = f"+{lag}d"
-        elif lag < 0:
-            lag_str = f"{lag}d"
+            lag_str = ""
+            if lag > 0:
+                lag_str = f"+{lag}d"
+            elif lag < 0:
+                lag_str = f"{lag}d"
 
-        new_pred = f"{pred_id}{lt}{lag_str}"
-        existing = succ_task.Predecessors.strip()
+            new_pred = f"{pred_id}{lt}{lag_str}"
+            existing = succ_task.Predecessors.strip()
 
-        if existing:
-            succ_task.Predecessors = existing + "," + new_pred
-        else:
-            succ_task.Predecessors = new_pred
+            if existing:
+                succ_task.Predecessors = existing + "," + new_pred
+            else:
+                succ_task.Predecessors = new_pred
 
-        linked += 1
+            linked += 1
 
     app.FileSave()
     return json.dumps({

@@ -135,6 +135,26 @@ def projeto_de_teste(contador):
           Start=datetime.datetime(2026, 4, 1), Finish=AMANHA,
           Duration=2400, PercentComplete=0, TotalSlack=9600, FreeSlack=4800,
           Manual=True, Active=False),
+        # Two predecessors in ONE string, and the second of them is task 7 --
+        # which has no predecessors of its own. So 7 is a successor only if the
+        # orphan scan splits the entry: a scan that reads "6FS,7FS" whole, or
+        # keeps only the first entry, calls 7 an orphan and is wrong. Missing
+        # start and negative slack here give validate_schedule two more
+        # categories to fill, so it does not answer with empty lists that any
+        # two backends agree on.
+        t(UniqueID=8, ID=8, Name="Comissionamento", OutlineLevel=2, WBS="2.3",
+          Start=None, Finish=AMANHA, Duration=2400, PercentComplete=0,
+          TotalSlack=-2400, FreeSlack=0, Predecessors="6FS,7FS",
+          ResourceNames="Dave", Manual=False),
+        # Nobody links to it and it links to nobody: the real orphan.
+        t(UniqueID=9, ID=9, Name="Auditoria", OutlineLevel=2, WBS="2.4",
+          Start=datetime.datetime(2026, 5, 1), Finish=AMANHA, Duration=2400,
+          PercentComplete=0, ResourceNames="Erin", Manual=False),
+        # A summary with nothing under it: last row, so no task follows that
+        # could be its child.
+        t(UniqueID=10, ID=10, Name="Encerramento", OutlineLevel=1, Summary=True,
+          WBS="3", Start=datetime.datetime(2026, 6, 1), Finish=AMANHA,
+          Duration=480, PercentComplete=0),
     ]
 
 
@@ -188,6 +208,13 @@ ESPERADO = {
     7: {"name": "Treinamento", "manual": True, "active": False,
         "total_slack_days": 20.0, "free_slack_days": 10.0,
         "percent_complete": 0, "summary": False},
+    8: {"name": "Comissionamento", "summary": False, "start": None,
+        "predecessors": "6FS,7FS", "resource_names": "Dave",
+        "total_slack_days": -5.0, "percent_complete": 0},
+    9: {"name": "Auditoria", "summary": False, "predecessors": "",
+        "resource_names": "Erin", "total_slack_days": 0.0},
+    10: {"name": "Encerramento", "summary": True, "outline_level": 1,
+         "wbs": "3", "duration_days": 1.0},
 }
 
 
@@ -264,6 +291,7 @@ async def rodar():
         ("get_schedule_analysis", {}),
         ("find_available_slack", {}),
         ("find_available_slack", {"min_days": 20}),
+        ("validate_schedule", {}),
     ]
 
     print("\n=== PARIDADE ENTRE OS DOIS CAMINHOS ===")
@@ -349,6 +377,66 @@ async def rodar():
         erradas = {k: (v, lido.get(k)) for k, v in esperado.items()
                    if lido.get(k) != v}
         ok("tarefa %d lida campo a campo" % uid, not erradas, str(erradas))
+
+
+    # --- o que validate_schedule deve encontrar --------------------------
+    #
+    # Parity runs the SAME body twice, so an orphan scan that is wrong is
+    # wrong on both sides and the two still agree. These expectations are
+    # written by hand against the fixture, and are the only check that the
+    # categories mean what they say.
+    print("\n=== O QUE validate_schedule DEVE ENCONTRAR ===")
+    msp_fast.varredura = lambda p: (None, {"backend": "com", "reason": "test"})
+    saida = await chamar("validate_schedule")
+
+    def nomes(categoria):
+        return sorted(x["name"] for x in saida["issues"][categoria]["tasks"])
+
+    ESPERADAS = {
+        # 7 has no predecessors and is named only as the SECOND entry of
+        # "6FS,7FS", so it is an orphan to any scan that fails to split.
+        "orphan_tasks":         ["Auditoria"],
+        "no_resources":         ["Treinamento"],
+        "past_due_no_progress": ["Marco de Revisao", "Requisitos"],
+        "empty_summaries":      ["Encerramento"],
+        "missing_dates":        ["Comissionamento"],
+        "negative_slack":       ["Comissionamento"],
+    }
+    for categoria, esperadas in ESPERADAS.items():
+        ok("validate_schedule %s" % categoria, nomes(categoria) == esperadas,
+           "achou %s" % nomes(categoria))
+    ok("validate_schedule conta e pontua",
+       saida["summary"] == {"total_tasks": 10, "total_issues": 7}
+       and saida["health_score"] == 30,
+       json.dumps({"summary": saida["summary"],
+                   "health_score": saida["health_score"]}))
+
+    # --- e a que custo ---------------------------------------------------
+    #
+    # The orphan scan used to re-read Predecessors of every task for every
+    # detail task: O(n^2) COM reads, about 71 million on the reference
+    # 8,429-task schedule. A ten-task fixture cannot tell n^2 from n, so this
+    # runs on a project large enough that it can: at 120 tasks the old shape
+    # costs upwards of 120 reads per task and the one-pass shape costs a
+    # dozen.
+    print("\n=== CUSTO DE validate_schedule ===")
+    contador_g = [0]
+    N = 120
+    grandes = [TarefaFalsa(contador_g, UniqueID=i, ID=i, Name="T%d" % i,
+                           OutlineLevel=1,
+                           Start=datetime.datetime(2026, 1, 1),
+                           Finish=AMANHA, Duration=480,
+                           ResourceNames="Alice",
+                           Predecessors="" if i == 1 else "%dFS" % (i - 1))
+               for i in range(1, N + 1)]
+    proj_g = ProjetoFalso(grandes, nome="Grande")
+    instalar_falsos(proj_g)
+    antes = contador_g[0]
+    await chamar("validate_schedule")
+    por_tarefa = (contador_g[0] - antes) / float(N)
+    ok("validate_schedule le menos de 20 propriedades por tarefa em %d tarefas" % N,
+       por_tarefa < 20, "leu %.1f" % por_tarefa)
+    instalar_falsos(proj)
 
     await payload(ok)
 

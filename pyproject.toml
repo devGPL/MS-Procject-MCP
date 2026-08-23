@@ -38,6 +38,15 @@ dependencies = [
     "python-dateutil>=2.8",
 ]
 
+[project.optional-dependencies]
+# Parses the .mpp directly instead of walking it over COM: ~1.6s where COM
+# needs 30 to 48. Optional because jpype publishes no wheel for Windows on ARM
+# and needs a JVM; without it the server falls back to COM and says so.
+fast = [
+    "mpxj>=14",
+    "jpype1>=1.5",
+]
+
 [project.scripts]
 msproject-mcp = "server:main"
 

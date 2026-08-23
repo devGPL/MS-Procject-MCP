@@ -4,6 +4,17 @@
 
 Modularização do servidor e as correções que ela tornou visíveis.
 
+### Leitura
+
+**Quatorze ferramentas de leitura passam a responder do arquivo salvo quando podem.** Antes só `get_critical_path` fazia isso. Agora também `get_tasks`, `get_task`, `search_tasks`, `get_tasks_by_rag`, `get_overdue_tasks`, `get_tasks_by_resource`, `get_progress_summary`, `get_wbs_structure`, `filter_tasks`, `group_tasks_by`, `get_progress_by_wbs`, `get_constraints`, `export_csv`, `get_schedule_analysis` e `find_available_slack`. Toda resposta ganha um bloco `source` dizendo qual caminho respondeu e por quê — e um `warning` quando o MS Project reporta alterações não salvas. Requer `pip install -e ".[fast]"`; sem isso, ou em Windows ARM64, tudo cai no COM e o `source` explica.
+
+Enumerar uma tarefa pelo COM custa 2,635 ms contra 0,240 ms para ler uma propriedade dela: 83% de uma varredura acontece antes de qualquer campo ser lido. Numa agenda de 8.429 tarefas isso é um piso de ~20 s por ferramenta.
+
+Duas mudanças estreitas de comportamento acompanham:
+
+- `group_tasks_by` com um nome de campo fora da lista documentada agora o procura entre os campos publicados de uma tarefa (as chaves que `get_task` devolve) em vez de entre as propriedades COM cruas.
+- `get_constraints` reporta um valor de restrição desconhecido como ausente, em vez de `"Unknown(9)"`. Os oito valores conhecidos são o enum inteiro.
+
 ### Mudanças de comportamento
 
 Nenhuma assinatura de ferramenta mudou. O registro MCP é byte a byte idêntico ao da versão em arquivo único — mesma lista de nomes, mesmos schemas de entrada. O que mudou é o que as ferramentas aceitam e o que devolvem em casos que antes falhavam.

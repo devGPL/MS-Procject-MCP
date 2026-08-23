@@ -178,90 +178,184 @@ def _parse_date(s):
     return datetime.datetime.strptime(s, "%Y-%m-%d")
 
 
+def _fmt_com(dt):
+    """Format a COM date, or None when there is no date.
+
+    MS Project returns a locale-dependent sentinel for an empty date --
+    "ND" on a Portuguese install, "NA" on an English one -- and the old
+    code passed it straight through, so a task with no deadline came back
+    as {"deadline": "ND"}. A client reading that sees a value where there
+    is none, and the string it sees depends on the language of the machine
+    the server happens to run on.
+
+    Anything that does not start with a four-digit year is treated as
+    "no date", which covers both sentinels without hardcoding either.
+    """
+    try:
+        if dt is None:
+            return None
+        texto = str(dt)[:19]
+        if len(texto) < 10 or not texto[:4].isdigit():
+            return None
+        return texto
+    except Exception:
+        return None
+
+
+def _safe(read, default=None):
+    """Read a COM property defensively.
+
+    `read` must be a callable. Passing the property itself evaluates it in
+    the caller's frame, before this function runs, so the except clause
+    never sees the failure and `default` is never applied.
+
+    A None result is treated like a failed read: COM returns None for
+    properties that do not apply to a task type, and callers divide by
+    these values.
+    """
+    try:
+        value = read()
+    except Exception:
+        return default
+    return default if value is None else value
+
+
+# The 35 task fields, one reader each, keyed by the name they are published
+# under. This table is the single definition of the task shape on the COM
+# side: task_to_dict materialises every entry, VistaCOM evaluates one entry
+# at a time on demand, and both therefore agree by construction. When they
+# were two separate bodies, a field added to one was a field missing from the
+# other -- and the caller could not tell, because a missing key reads as an
+# empty value rather than as an error.
+#
+# Which readers are wrapped in _safe() is deliberate and unchanged: the
+# unguarded ones are the properties every task has, and a failure there is a
+# broken COM reference rather than a field that does not apply.
+_LEITORES_TAREFA = {
+    "unique_id":              lambda t, mpd: t.UniqueID,
+    "id":                     lambda t, mpd: t.ID,
+    "name":                   lambda t, mpd: t.Name,
+    "outline_level":          lambda t, mpd: t.OutlineLevel,
+    "wbs":                    lambda t, mpd: t.WBS,
+    "summary":                lambda t, mpd: bool(t.Summary),
+    "milestone":              lambda t, mpd: bool(t.Milestone),
+    "start":                  lambda t, mpd: _fmt_com(t.Start),
+    "finish":                 lambda t, mpd: _fmt_com(t.Finish),
+    "duration_days":          lambda t, mpd: round(t.Duration / mpd, 2) if t.Duration else 0,
+    "percent_complete":       lambda t, mpd: t.PercentComplete,
+    "actual_start":           lambda t, mpd: _fmt_com(_safe(lambda: t.ActualStart)),
+    "actual_finish":          lambda t, mpd: _fmt_com(_safe(lambda: t.ActualFinish)),
+    "remaining_duration_days": lambda t, mpd: round(_safe(lambda: t.RemainingDuration, 0) / mpd, 2),
+    "total_slack_days":       lambda t, mpd: round(_safe(lambda: t.TotalSlack, 0) / mpd, 2),
+    "free_slack_days":        lambda t, mpd: round(_safe(lambda: t.FreeSlack, 0) / mpd, 2),
+    "deadline":               lambda t, mpd: _fmt_com(_safe(lambda: t.Deadline)),
+    "priority":               lambda t, mpd: _safe(lambda: t.Priority, 500),
+    "constraint_type":        lambda t, mpd: CONSTRAINT_NAMES.get(_safe(lambda: t.ConstraintType, 0), "ASAP"),
+    "constraint_date":        lambda t, mpd: _fmt_com(_safe(lambda: t.ConstraintDate)),
+    "manual":                 lambda t, mpd: bool(_safe(lambda: t.Manual, False)),
+    "type":                   lambda t, mpd: TASK_TYPE_NAMES.get(_safe(lambda: t.Type, 0), "FixedUnits"),
+    "predecessors":           lambda t, mpd: t.Predecessors,
+    "resource_names":         lambda t, mpd: t.ResourceNames,
+    "notes":                  lambda t, mpd: t.Notes,
+    "critical":               lambda t, mpd: bool(t.Critical),
+    "active":                 lambda t, mpd: bool(t.Active),
+    "rag":                    lambda t, mpd: t.Text1 or "",
+    "text1":                  lambda t, mpd: t.Text1 or "",
+    "text2":                  lambda t, mpd: t.Text2 or "",
+    "text3":                  lambda t, mpd: t.Text3 or "",
+    "flag1":                  lambda t, mpd: bool(t.Flag1),
+    "flag2":                  lambda t, mpd: bool(t.Flag2),
+    "hyperlink":              lambda t, mpd: _safe(lambda: t.HyperlinkAddress, "") or "",
+    "hyperlink_text":         lambda t, mpd: _safe(lambda: t.Hyperlink, "") or "",
+}
+
+CAMPOS_TAREFA = tuple(_LEITORES_TAREFA)
+
+
 def task_to_dict(t, mpd):
     """Convert a COM Task object to a plain dict.
 
     Takes MinutesPerDay rather than the project: reading it here meant one COM
     round trip per task in every listing.
+
+    Costs one COM read per field -- 35 of them. That is the right trade when
+    the caller publishes the whole task and the wrong one when it publishes
+    three fields of it, which is what VistaCOM below exists for.
+    """
+    return {chave: ler(t, mpd) for chave, ler in _LEITORES_TAREFA.items()}
+
+
+class VistaCOM:
+    """One COM task, read through the key names task_to_dict publishes.
+
+    Exists so a tool can be written ONCE against key names and still be served
+    by either backend: the fast path hands it dicts parsed from the .mpp, this
+    hands it COM tasks, and the body cannot tell them apart.
+
+    The alternative -- calling task_to_dict on the COM side to get dicts
+    everywhere -- would have cost 35 property reads per task where the tool
+    needs three. Measured: 0.240 ms per property against 2.635 ms to obtain
+    the task object, so materialising every field turns a scan of 8,429 tasks
+    from about 32 seconds into about 92. The fast path is unavailable on
+    Windows on ARM, so that regression would land on the only path that runs
+    there.
+
+    Reads on demand and caches, because a filter asking the same field twice
+    is one COM round trip, not two.
     """
 
-    def fmt(dt):
-        """Format a COM date, or None when there is no date.
+    __slots__ = ("com", "_mpd", "_lido")
 
-        MS Project returns a locale-dependent sentinel for an empty date --
-        "ND" on a Portuguese install, "NA" on an English one -- and the old
-        code passed it straight through, so a task with no deadline came back
-        as {"deadline": "ND"}. A client reading that sees a value where there
-        is none, and the string it sees depends on the language of the machine
-        the server happens to run on.
+    def __init__(self, tarefa, mpd):
+        self.com = tarefa
+        self._mpd = mpd
+        self._lido = {}
 
-        Anything that does not start with a four-digit year is treated as
-        "no date", which covers both sentinels without hardcoding either.
-        """
+    def __getitem__(self, chave):
+        if chave in self._lido:
+            return self._lido[chave]
+        ler = _LEITORES_TAREFA.get(chave)
+        if ler is None:
+            # Same failure a dict gives, so a tool asking for a field that does
+            # not exist fails identically on both backends instead of only on
+            # one of them.
+            raise KeyError(chave)
+        valor = ler(self.com, self._mpd)
+        self._lido[chave] = valor
+        return valor
+
+    def get(self, chave, padrao=None):
         try:
-            if dt is None:
-                return None
-            texto = str(dt)[:19]
-            if len(texto) < 10 or not texto[:4].isdigit():
-                return None
-            return texto
-        except Exception:
-            return None
+            return self[chave]
+        except KeyError:
+            return padrao
 
-    def safe(read, default=None):
-        """Read a COM property defensively.
+    def completo(self):
+        """Every field, as task_to_dict would return it."""
+        return task_to_dict(self.com, self._mpd)
 
-        `read` must be a callable. Passing the property itself evaluates it in
-        the caller's frame, before this function runs, so the except clause
-        never sees the failure and `default` is never applied.
 
-        A None result is treated like a failed read: COM returns None for
-        properties that do not apply to a task type, and callers divide by
-        these values.
-        """
-        try:
-            value = read()
-        except Exception:
-            return default
-        return default if value is None else value
+def vista_com(proj, mpd):
+    """Walk proj.Tasks yielding one VistaCOM each -- the COM half of a scan.
 
-    return {
-        "unique_id":              t.UniqueID,
-        "id":                     t.ID,
-        "name":                   t.Name,
-        "outline_level":          t.OutlineLevel,
-        "wbs":                    t.WBS,
-        "summary":                bool(t.Summary),
-        "milestone":              bool(t.Milestone),
-        "start":                  fmt(t.Start),
-        "finish":                 fmt(t.Finish),
-        "duration_days":          round(t.Duration / mpd, 2) if t.Duration else 0,
-        "percent_complete":       t.PercentComplete,
-        "actual_start":           fmt(safe(lambda: t.ActualStart)),
-        "actual_finish":          fmt(safe(lambda: t.ActualFinish)),
-        "remaining_duration_days": round(safe(lambda: t.RemainingDuration, 0) / mpd, 2),
-        "total_slack_days":       round(safe(lambda: t.TotalSlack, 0) / mpd, 2),
-        "free_slack_days":        round(safe(lambda: t.FreeSlack, 0) / mpd, 2),
-        "deadline":               fmt(safe(lambda: t.Deadline)),
-        "priority":               safe(lambda: t.Priority, 500),
-        "constraint_type":        CONSTRAINT_NAMES.get(safe(lambda: t.ConstraintType, 0), "ASAP"),
-        "constraint_date":        fmt(safe(lambda: t.ConstraintDate)),
-        "manual":                 bool(safe(lambda: t.Manual, False)),
-        "type":                   TASK_TYPE_NAMES.get(safe(lambda: t.Type, 0), "FixedUnits"),
-        "predecessors":           t.Predecessors,
-        "resource_names":         t.ResourceNames,
-        "notes":                  t.Notes,
-        "critical":               bool(t.Critical),
-        "active":                 bool(t.Active),
-        "rag":                    t.Text1 or "",
-        "text1":                  t.Text1 or "",
-        "text2":                  t.Text2 or "",
-        "text3":                  t.Text3 or "",
-        "flag1":                  bool(t.Flag1),
-        "flag2":                  bool(t.Flag2),
-        "hyperlink":              safe(lambda: t.HyperlinkAddress, "") or "",
-        "hyperlink_text":         safe(lambda: t.Hyperlink, "") or "",
-    }
+    Yields every task including summaries. Filtering belongs to the tool, so
+    that the same line filters both backends; a filter applied here would
+    apply to one of them only.
+    """
+    for t in proj.Tasks:
+        if t is None:
+            continue
+        yield VistaCOM(t, mpd)
+
+
+def tarefa_completa(vista):
+    """The full 35-field dict for either kind of view.
+
+    The fast path already holds one, so this is the identity there and 35 COM
+    reads on the other side -- paid only for the tasks a tool actually
+    publishes, never for the ones it filtered out.
+    """
+    return vista if isinstance(vista, dict) else vista.completo()
 
 
 def _count_resources(proj):
@@ -291,6 +385,36 @@ def _to_naive(dt):
         pass
     return dt
 
+
+
+def _dia(valor):
+    """The 'YYYY-MM-DD' half of the date a task view publishes.
+
+    Views carry 'YYYY-MM-DD HH:MM:SS' because that is what task_to_dict has
+    always published. Tools that summarise -- a WBS roll-up, a slack listing --
+    published the short form via _fmt_date, and shortening here keeps their
+    output byte-identical to what they returned before they read from a view.
+    """
+    return valor[:10] if valor else None
+
+
+def _dt_de_vista(valor):
+    """Parse a view's date string back to a datetime, or None.
+
+    Both backends publish dates as text, so a tool that compares against
+    datetime.now() has to parse rather than reach for the COM value -- which
+    exists on one side only.
+    """
+    if not valor:
+        return None
+    try:
+        return datetime.datetime.strptime(valor[:19], "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        pass
+    try:
+        return datetime.datetime.strptime(valor[:10], "%Y-%m-%d")
+    except Exception:
+        return None
 
 
 def _calendar_names(proj):

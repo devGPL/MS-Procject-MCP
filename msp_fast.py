@@ -311,7 +311,14 @@ def _prioridade(t):
 
 
 def tarefas(projeto, incluir_resumo=False):
-    """Every task as the same dict COM would produce."""
+    """Every task as the same dict COM would produce, in row order.
+
+    Sorted by ID because that is the order COM enumerates in -- ID is the row
+    number -- and several tools read meaning from the order: a WBS tree is
+    built by walking tasks and pushing each onto a stack of parents, so a list
+    in a different order produces a different tree rather than a wrong field.
+    Tasks without an ID sort last instead of raising.
+    """
     saida = []
     for t in projeto.getTasks():
         try:
@@ -322,7 +329,49 @@ def tarefas(projeto, incluir_resumo=False):
         except Exception:
             continue
         saida.append(task_to_dict(t))
+    saida.sort(key=lambda d: (d.get("id") is None, d.get("id") or 0))
     return saida
+
+
+def varredura(proj):
+    """Every task of the project, from whichever backend can answer.
+
+    Returns (lidas, origem):
+
+      lidas   list of task dicts when the saved file could be parsed, and None
+              when the caller must walk COM itself. Summaries are always
+              included -- filtering belongs to the tool, so that one line
+              filters both backends.
+      origem  the source block the response carries, saying which path
+              answered and why.
+
+    This is the whole fast-path decision for a scanning tool. It lives here so
+    that adding the fast path to a tool is three lines rather than thirty, and
+    so that the fallback behaves identically in every one of them: when the
+    same decision was written out per tool, each copy was a chance for one
+    tool to fall back quietly where the others were loud.
+    """
+    usar_arquivo, caminho, origem = contexto(proj)
+    if not usar_arquivo:
+        return None, origem
+
+    try:
+        return tarefas(ler(caminho), incluir_resumo=True), origem
+    except Exception as exc:
+        # A parse failure must not fail the tool -- COM still works. But it
+        # must not hide either: an exception here is a defect, not the
+        # documented case of the fast path being unavailable, and the two look
+        # identical from outside. This one is flagged loudly, because a
+        # fallback that silently degrades is how a change that delivers
+        # nothing still looks like it works.
+        return None, {
+            "backend": "com",
+            "reason": "fast path RAISED and fell back: %s: %s"
+                      % (type(exc).__name__, str(exc)[:140]),
+            "action_required": "This is a bug, not a configuration. The "
+                               "answer below is correct but was produced the "
+                               "slow way; report the error above.",
+        }
 
 
 def _modo(t):

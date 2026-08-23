@@ -14,6 +14,7 @@ effect.
 import json
 
 from msp_core import (
+    responder,
     _com_retry,
     mcp,
     get_app,
@@ -43,14 +44,14 @@ def open_project(file_path: str) -> str:
 
     app.FileOpen(file_path)
     proj = app.ActiveProject
-    return json.dumps({
+    return responder({
         "status":     "opened",
         "name":       proj.Name,
         "full_path":  proj.FullName,
         "task_count": proj.Tasks.Count,
         "start":      str(proj.ProjectStart)[:10],
         "finish":     str(proj.ProjectFinish)[:10],
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -76,12 +77,12 @@ def new_project(title: str = "New Project", start: str = "") -> str:
     if start:
         proj.ProjectStart = _parse_date(start)
 
-    return json.dumps({
+    return responder({
         "status": "created",
         "title":  proj.Title,
         "name":   proj.Name,
         "start":  str(proj.ProjectStart)[:10],
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -130,7 +131,7 @@ def get_project_info() -> str:
         except Exception:
             return ""
 
-    return json.dumps({
+    return responder({
         "name":            proj.Name,
         "full_path":       proj.FullName,
         "title":           safe_read("Title"),
@@ -148,19 +149,17 @@ def get_project_info() -> str:
         "critical_tasks":  critical,
         "resources":       _count_resources(proj),
         "minutes_per_day": mpd,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def set_project_properties(properties_json: str) -> str:
     """
-    Set project metadata properties.
-
-    Args:
-        properties_json: JSON string with fields to set. All optional:
-            title, manager, company, author, subject, status_date (YYYY-MM-DD),
-            start (YYYY-MM-DD).
-            Example: '{"title": "EXPO 2030", "manager": "John", "company": "ERC"}'
+    Set project metadata.
+    
+    properties_json: JSON object, all keys optional -- title, manager, company,
+    author, subject, status_date, start (both YYYY-MM-DD).
+    Example: '{"title":"EXPO 2030","manager":"John"}'
     """
     props = json.loads(properties_json)
     app   = get_app()
@@ -183,7 +182,7 @@ def set_project_properties(properties_json: str) -> str:
         proj.StatusDate = _parse_date(props["status_date"]); changed.append("status_date")
 
     app.FileSave()
-    return json.dumps({"status": "updated", "changed": changed}, indent=2)
+    return responder({"status": "updated", "changed": changed})
 
 
 @mcp.tool()
@@ -257,11 +256,11 @@ def list_projects() -> str:
             "is_active":  p.Name == active_name,
         })
 
-    return json.dumps({
+    return responder({
         "count":    len(projects),
         "active":   active_name,
         "projects": projects,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -283,14 +282,14 @@ def switch_project(name_or_index: str) -> str:
         if 1 <= idx <= app.Projects.Count:
             p = app.Projects(idx)
             p.Activate()
-            return json.dumps({
+            return responder({
                 "status":     "switched",
                 "name":       p.Name,
                 "full_path":  p.FullName,
                 "task_count": p.Tasks.Count,
                 "start":      _fmt_date(p.ProjectStart),
                 "finish":     _fmt_date(p.ProjectFinish),
-            }, indent=2)
+            })
         else:
             return json.dumps({"error": f"Index {idx} out of range. Projects: 1-{app.Projects.Count}."})
     except ValueError:
@@ -315,39 +314,35 @@ def switch_project(name_or_index: str) -> str:
     try:
         active = app.ActiveProject.Name
         if active == p.Name:
-            return json.dumps({
+            return responder({
                 "status":     "already_active",
                 "name":       p.Name,
                 "full_path":  p.FullName,
                 "task_count": p.Tasks.Count,
                 "start":      _fmt_date(p.ProjectStart),
                 "finish":     _fmt_date(p.ProjectFinish),
-            }, indent=2)
+            })
     except Exception:
         pass
 
     p.Activate()
-    return json.dumps({
+    return responder({
         "status":     "switched",
         "name":       p.Name,
         "full_path":  p.FullName,
         "task_count": p.Tasks.Count,
         "start":      _fmt_date(p.ProjectStart),
         "finish":     _fmt_date(p.ProjectFinish),
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def cross_project_link(source_project: str, source_unique_id: int, target_project: str, target_unique_id: int, link_type: str = "FS") -> str:
     """
-    Create a dependency link across open projects.
-
-    Args:
-        source_project:    Name of the predecessor's project.
-        source_unique_id:  UniqueID of the predecessor task.
-        target_project:    Name of the successor's project.
-        target_unique_id:  UniqueID of the successor task.
-        link_type:         'FS' (default), 'SS', 'FF', or 'SF'.
+    Link a task in the active project to a task in another OPEN project.
+    
+    Both files must be open in Microsoft Project. link_type: 'FS', 'SS', 'FF' or
+    'SF'. lag_days may be negative.
     """
     app = get_app(require_project=False)
 
@@ -392,12 +387,12 @@ def cross_project_link(source_project: str, source_unique_id: int, target_projec
     except Exception:
         pass
 
-    return json.dumps({
+    return responder({
         "status":  "linked",
         "source":  {"project": src_proj.Name, "task": src_task.Name, "unique_id": source_unique_id},
         "target":  {"project": tgt_proj.Name, "task": tgt_task.Name, "unique_id": target_unique_id},
         "link_type": link_type,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -420,7 +415,7 @@ def undo_last(count: int = 1) -> str:
         except Exception:
             break
 
-    return json.dumps({"status": "undone", "undo_count": count}, indent=2)
+    return responder({"status": "undone", "undo_count": count})
 
 
 @mcp.tool()
@@ -465,24 +460,22 @@ def insert_subproject(file_path: str, after_unique_id: int = 0) -> str:
     except Exception:
         pass
 
-    return json.dumps({
+    return responder({
         "status":           "inserted",
         "file_path":        file_path,
         "inserted_after":   after_unique_id or "end",
         "task_count_before": count_before,
         "task_count_after":  count_after,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def snapshot_to_json(output_path: str, include_resources: bool = True) -> str:
     """
-    Full project state dump for version control / diff.
-    Exports all tasks and optionally resources to a JSON file.
-
-    Args:
-        output_path:       Full path for the output JSON file (required).
-        include_resources: Include resource data (default True).
+    Dump the whole project to a JSON file, for version control or diffing.
+    
+    output_path is a path on the machine running Microsoft Project.
+    Pair with snapshot_diff, which compares two such files without touching COM.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -531,13 +524,13 @@ def snapshot_to_json(output_path: str, include_resources: bool = True) -> str:
     with open(output_path, "w", encoding="utf-8") as fp:
         json.dump(snapshot, fp, indent=2, default=str)
 
-    return json.dumps({
+    return responder({
         "status":    "exported",
         "path":      output_path,
         "tasks":     len(tasks),
         "resources": len(resources),
         "project":   project_meta["name"],
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -573,15 +566,15 @@ def health_check() -> str:
     except Exception as exc:
         # Reached the application, could not talk to it. Say which, rather than
         # letting a Windows-language COM code reach the client bare.
-        return json.dumps({
+        return responder({
             "status": "busy",
             "error": "MS Project answered but refused the call: %s" % str(exc)[:160],
             "hint": "It is usually recalculating or showing a dialog. Retried "
                     "for about 3 seconds before giving up; try again shortly, "
                     "and check the application for an open dialog box.",
-        }, indent=2)
+        })
 
-    return json.dumps(result, indent=2)
+    return responder(result)
 
 
 @mcp.tool()
@@ -625,11 +618,11 @@ def snapshot_diff(path_a: str, path_b: str) -> str:
         if diffs:
             changed.append({"unique_id": uid, "name": b.get("name", a.get("name")), "changes": diffs})
 
-    return json.dumps({
+    return responder({
         "added_count":   len(added),
         "deleted_count": len(deleted),
         "changed_count": len(changed),
         "added":         added,
         "deleted":       deleted,
         "changed":       changed,
-    }, indent=2)
+    })

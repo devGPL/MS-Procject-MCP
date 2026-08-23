@@ -22,6 +22,9 @@ import msp_fast
 
 from msp_core import (
     mcp,
+    responder,
+    enxugar,
+    recortar,
     get_app,
     get_proj,
     tarefa_completa,
@@ -171,16 +174,18 @@ def get_critical_path() -> str:
         if v["critical"]:
             results.append(tarefa_completa(v))
 
+    fatia, pagina = recortar([enxugar(t) for t in results])
     saida = {
         "count": len(results),
         "source": origem,
         "diagnostics": _probe_report(probe),
-        "tasks": results,
+        "page": pagina,
+        "tasks": fatia,
     }
     aviso = _network_warning(probe, "The critical path")
     if aviso:
         saida["warning"] = aviso
-    return json.dumps(saida, indent=2)
+    return responder(saida)
 
 
 @mcp.tool()
@@ -229,6 +234,7 @@ def get_schedule_analysis() -> str:
             "finish":          _dia(v["finish"]),
         })
 
+    fatia, pagina = recortar(tasks)
     saida = {
         "summary": {
             "total_tasks":     count,
@@ -238,7 +244,8 @@ def get_schedule_analysis() -> str:
         },
         "source": origem,
         "diagnostics": _probe_report(probe),
-        "tasks": tasks,
+        "page": pagina,
+        "tasks": fatia,
     }
     aviso = _network_warning(probe, "Float analysis")
     if aviso:
@@ -246,7 +253,7 @@ def get_schedule_analysis() -> str:
         # equals the task count and reads as a project entirely on the critical
         # path. It is the opposite: nothing was computed.
         saida["warning"] = aviso
-    return json.dumps(saida, indent=2)
+    return responder(saida)
 
 
 @mcp.tool()
@@ -354,10 +361,19 @@ def validate_schedule() -> str:
         except Exception:
             pass
 
+    # Every category can name thousands of tasks. The counts stay exact --
+    # the health score is computed from them -- and only the lists are cut,
+    # each one saying so.
+    for categoria in issues.values():
+        fatia, pagina = recortar(categoria["tasks"])
+        categoria["tasks"] = fatia
+        if pagina.get("truncated"):
+            categoria["page"] = pagina
+
     total_issues = sum(cat["count"] for cat in issues.values())
     health_score = max(0, round(100 - (total_issues / total_tasks * 100))) if total_tasks else 0
 
-    return json.dumps({
+    return responder({
         "project":      proj.Name,
         "health_score": health_score,
         "issues":       issues,
@@ -365,7 +381,7 @@ def validate_schedule() -> str:
             "total_tasks":  total_tasks,
             "total_issues": total_issues,
         },
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -380,10 +396,10 @@ def level_resources() -> str:
     app.LevelNow()
     app.FileSave()
 
-    return json.dumps({
+    return responder({
         "status":  "leveled",
         "project": proj.Name,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -425,17 +441,19 @@ def find_available_slack(min_days: int = 5) -> str:
 
     tasks.sort(key=lambda x: x["total_slack_days"], reverse=True)
 
+    fatia, pagina = recortar(tasks)
     saida = {
         "min_days":    min_days,
         "count":       len(tasks),
         "source":      origem,
         "diagnostics": _probe_report(probe),
-        "tasks":       tasks,
+        "page":        pagina,
+        "tasks":       fatia,
     }
     aviso = _network_warning(probe, "Available slack")
     if aviso:
         saida["warning"] = aviso
-    return json.dumps(saida, indent=2)
+    return responder(saida)
 
 
 @mcp.tool()
@@ -457,12 +475,11 @@ def calculate_project() -> str:
 @mcp.tool()
 def update_project(complete_through: str, set_0_or_100: bool = False) -> str:
     """
-    Mark all tasks complete through a given date (the weekly PMO ritual).
-    Tasks that should have finished by the date get their % complete updated.
-
-    Args:
-        complete_through: Date as YYYY-MM-DD — tasks scheduled through this date are updated.
-        set_0_or_100:     If True, tasks are set to 0% or 100% only (no partial). Default False.
+    Mark progress complete through a date -- the weekly status ritual.
+    
+    complete_through: YYYY-MM-DD. set_0_or_100 restricts the result to 0% or 100%
+    instead of partial progress. Changes percent complete on every task scheduled
+    through that date.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -485,12 +502,12 @@ def update_project(complete_through: str, set_0_or_100: bool = False) -> str:
             app.UpdateProject(dt)
     app.FileSave()
 
-    return json.dumps({
+    return responder({
         "status": "updated",
         "complete_through": complete_through,
         "set_0_or_100": set_0_or_100,
         "project": proj.Name,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
@@ -525,22 +542,21 @@ def reschedule_incomplete_work(reschedule_from: str = "") -> str:
             proj.StatusDate = dt  # At minimum set the status date
     app.FileSave()
 
-    return json.dumps({
+    return responder({
         "status": "rescheduled",
         "reschedule_from": str(dt)[:10],
         "project": proj.Name,
-    }, indent=2)
+    })
 
 
 @mcp.tool()
 def get_critical_path_sequence() -> str:
     """
-    Return the critical path as an ordered chain from project start to finish.
-    Unlike get_critical_path (flat list), this shows the exact sequence of tasks
-    that drives the project end date, connected by their dependency links.
-
-    Returns the longest path through the network with total duration,
-    each task's contribution, and the driving relationships.
+    The critical path as an ordered chain, each step linked to the next.
+    
+    Reports link type and lag between steps. Warns when the critical tasks are not
+    linked to each other -- that is the absence of a critical path, not a path of
+    one step.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -574,7 +590,7 @@ def get_critical_path_sequence() -> str:
             critical_tasks[t.UniqueID] = t
 
     if not critical_tasks:
-        return json.dumps({
+        return responder({
             "error": "No critical non-summary tasks found.",
             "tasks_scanned": scanned,
             "critical_total": critical_total,
@@ -582,7 +598,7 @@ def get_critical_path_sequence() -> str:
             "hint": "Every critical task in this project is a summary. That "
                     "usually means the detail tasks are manually scheduled or "
                     "unlinked, so MS Project computes no critical path.",
-        }, indent=2)
+        })
 
     # Build forward adjacency: uid -> [(successor_uid, link_type, lag_days)]
     forward = {uid: [] for uid in critical_tasks}
@@ -681,6 +697,7 @@ def get_critical_path_sequence() -> str:
 
     linked = sum(1 for uid in critical_tasks if forward.get(uid))
 
+    fatia, pagina = recortar(sequence)
     resultado = {
         "project_start":       proj_start,
         "project_finish":      proj_finish,
@@ -694,7 +711,8 @@ def get_critical_path_sequence() -> str:
             "critical_detail":   len(critical_tasks),
             "linked_to_another_critical_task": linked,
         },
-        "sequence":            sequence,
+        "page":                pagina,
+        "sequence":            fatia,
     }
 
     # A chain of one is not a critical path, it is the absence of one. Say so
@@ -711,7 +729,7 @@ def get_critical_path_sequence() -> str:
             "planning method that does not use CPM."
         )
 
-    return json.dumps(resultado, indent=2)
+    return responder(resultado)
 
 
 @mcp.tool()
@@ -722,14 +740,10 @@ def get_critical_tasks_for_period(
     include_non_critical_milestones: bool = False,
 ) -> str:
     """
-    Return critical tasks and key milestones that fall within a date range.
-    Perfect for period-focused reporting: 'What's critical in Q2?'
-
-    Args:
-        start_date:  Period start (YYYY-MM-DD, required).
-        end_date:    Period end (YYYY-MM-DD, required).
-        include_milestones: Include critical milestones in results (default True).
-        include_non_critical_milestones: Also include non-critical milestones in the period (default False).
+    Critical tasks and milestones overlapping a date range.
+    
+    Dates YYYY-MM-DD, both required. include_milestones covers critical ones;
+    include_non_critical_milestones adds the rest.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -804,15 +818,21 @@ def get_critical_tasks_for_period(
     critical_milestones.sort(key=lambda x: x["finish"] or "")
     other_milestones.sort(key=lambda x: x["finish"] or "")
 
-    return json.dumps({
+    tarefas_pg, pagina = recortar(critical_tasks)
+    marcos_pg, pagina_marcos = recortar(critical_milestones)
+    outros_pg, pagina_outros = recortar(other_milestones)
+    return responder({
         "period":              {"start": start_date, "end": end_date},
         "critical_task_count": len(critical_tasks),
         "critical_milestone_count": len(critical_milestones),
         "other_milestone_count": len(other_milestones),
-        "critical_tasks":      critical_tasks,
-        "critical_milestones": critical_milestones,
-        "other_milestones":    other_milestones,
-    }, indent=2)
+        "page":                pagina,
+        "critical_tasks":      tarefas_pg,
+        "critical_milestones": marcos_pg,
+        "critical_milestones_page": pagina_marcos,
+        "other_milestones":    outros_pg,
+        "other_milestones_page": pagina_outros,
+    })
 
 
 @mcp.tool()
@@ -821,18 +841,11 @@ def what_if_delay(
     delay_days: int = 5,
 ) -> str:
     """
-    What-if analysis: 'If I delay task X by N days, what happens to the schedule?'
-    Simulates the delay WITHOUT modifying the project — read-only analysis.
-
-    Shows:
-    - Whether the project end date would change (and by how much)
-    - Which tasks would become newly critical
-    - Which tasks would lose their slack
-    - Downstream tasks affected
-
-    Args:
-        unique_id:  Task UniqueID to simulate delaying.
-        delay_days: Number of working days to simulate (default 5).
+    Simulate delaying a task by N working days WITHOUT changing the project.
+    
+    Reports the project-end impact, tasks that would become critical, slack
+    consumed and downstream tasks affected. An estimate from slack arithmetic,
+    not a real reschedule.
     """
     app  = get_app()
     proj = get_proj(app)
@@ -993,4 +1006,4 @@ def what_if_delay(
         # because there are no links to propagate along. Downstream is always
         # empty and the impact always reads as none.
         saida["warning"] = aviso
-    return json.dumps(saida, indent=2)
+    return responder(saida)

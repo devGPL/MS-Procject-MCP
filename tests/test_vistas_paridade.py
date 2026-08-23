@@ -350,6 +350,86 @@ async def rodar():
                    if lido.get(k) != v}
         ok("tarefa %d lida campo a campo" % uid, not erradas, str(erradas))
 
+    await payload(ok)
+
+
+async def payload(ok):
+    """O corte de payload: limite, campos vazios e serializacao.
+
+    Medido no cronograma real: get_tasks devolvia 8,07 MB. Estes casos travam
+    as tres decisoes que derrubaram isso, e cada uma pode regredir sozinha e
+    calada -- um limite que para de valer, um enxugar que volta a publicar
+    vazios, um responder que volta a indentar.
+    """
+    print("\n=== PAYLOAD ===")
+
+    # enxugar
+    cheia = {"unique_id": 7, "id": 3, "name": "A", "notes": "", "text2": "x",
+             "percent_complete": 0, "total_slack_days": 0.0, "critical": False,
+             "start": None, "duration_days": 0, "priority": 500}
+    magra = msp_core.enxugar(cheia)
+    ok("enxugar tira vazio, None e False",
+       "notes" not in magra and "start" not in magra and "critical" not in magra)
+    ok("enxugar mantem quem identifica a linha",
+       all(k in magra for k in ("unique_id", "id", "name")))
+    ok("enxugar mantem zero que e medicao",
+       magra["percent_complete"] == 0 and magra["total_slack_days"] == 0.0
+       and magra["duration_days"] == 0)
+    vazia = msp_core.enxugar({"unique_id": 1, "id": 1, "name": "", "notes": ""})
+    ok("enxugar nunca apaga a identidade, nem vazia", set(vazia) == {"unique_id", "id", "name"})
+
+    # recortar
+    fatia, pagina = msp_core.recortar(list(range(1000)), limite=200)
+    ok("recortar corta e diz que cortou",
+       len(fatia) == 200 and pagina["total"] == 1000 and pagina.get("truncated"))
+    ok("recortar diz como pegar o resto", "how_to_get_the_rest" in pagina)
+    fatia, pagina = msp_core.recortar(list(range(1000)), limite=200, offset=900)
+    ok("ultima pagina nao se declara truncada",
+       len(fatia) == 100 and not pagina.get("truncated"))
+    fatia, pagina = msp_core.recortar(list(range(1000)), limite=-1)
+    ok("limite -1 devolve tudo", len(fatia) == 1000 and not pagina.get("truncated"))
+    fatia, pagina = msp_core.recortar([1, 2, 3])
+    ok("lista menor que o limite sai inteira e sem aviso",
+       fatia == [1, 2, 3] and not pagina.get("truncated"))
+
+    # responder
+    grande = msp_core.responder({"tasks": [{"x": i} for i in range(2000)]})
+    ok("resposta grande sai compacta", "\n" not in grande)
+    ok("resposta pequena sai indentada", "\n" in msp_core.responder({"a": 1}))
+
+    # ponta a ponta: um projeto grande o bastante para o limite valer
+    contador = [0]
+    muitas = [TarefaFalsa(contador, UniqueID=i, ID=i, Name="Tarefa %d" % i,
+                          OutlineLevel=2,
+                          Start=datetime.datetime(2026, 1, 5),
+                          Finish=AMANHA, Duration=480)
+              for i in range(1, 501)]
+    instalar_falsos(ProjetoFalso(muitas))
+    msp_fast.varredura = lambda p: (None, {"backend": "com", "reason": "test"})
+    r = await chamar("get_tasks")
+    ok("get_tasks para no limite e informa o total",
+       len(r["tasks"]) == msp_core.LIMITE_PADRAO and r["count"] == 500
+       and r["page"].get("truncated"))
+    # `v in (None, "", False)` diria que 0 e vazio, porque 0 == False em
+    # Python -- e reprovaria exatamente os zeros que devem ficar.
+    def nada(v):
+        return v is None or v == "" or v is False
+    ok("nenhuma tarefa publicada carrega campo vazio",
+       not any(nada(v) for t in r["tasks"] for v in t.values()),
+       str([{k: v for k, v in t.items() if nada(v)} for t in r["tasks"][:2]]))
+    r2 = await chamar("filter_tasks", filters_json=json.dumps({"limit": -1}))
+    ok("filter_tasks com limit -1 devolve tudo", len(r2["tasks"]) == 500)
+    # As definicoes das tools sao pagas por toda sessao, antes de qualquer
+    # chamada. O "title" que o pydantic gera para cada propriedade custava
+    # 8 KB dos 50,7 KB e nao diz nada que o nome do parametro ja nao diga.
+    definicoes = await mcp.list_tools()
+    esquemas = json.dumps([t.inputSchema for t in definicoes])
+    ok("nenhum schema publicado carrega 'title'", '"title"' not in esquemas)
+
+    r3 = await chamar("filter_tasks", filters_json=json.dumps({"offset": 480}))
+    ok("filter_tasks pagina a partir do offset",
+       len(r3["tasks"]) == 20 and r3["tasks"][0]["unique_id"] == 481)
+
 
 def main():
     asyncio.run(rodar())

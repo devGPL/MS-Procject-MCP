@@ -46,60 +46,98 @@ from msp_core import (
 # reporting a project where every task has zero float.
 # ---------------------------------------------------------------------------
 
-# Once this many linked tasks are seen the project demonstrably has a network,
-# and further probing is wasted COM reads. A healthy project stops early; a
-# degenerate one pays for the whole scan, which is exactly where the answer
-# matters.
-_LINK_PROBE_CEILING = 200
+# CPM needs tasks that are BOTH linked AND automatically scheduled. Once this
+# many such tasks are seen the project can demonstrably be computed over, and
+# further probing is wasted COM reads. A healthy project stops early; one that
+# cannot be computed pays for the full scan, which is where the answer matters.
+_PROBE_CEILING = 200
 
 
 def _new_probe():
-    return {"detail": 0, "linked": 0, "probing": True}
+    return {"detail": 0, "linked": 0, "manual": 0, "auto_linked": 0,
+            "probing": True}
 
 
 def _probe_link(probe, task):
-    """Count one detail task, and whether it has a predecessor.
+    """Count one detail task: is it linked, is it manually scheduled.
 
-    Costs one extra property read per detail task, and stops once the network
-    is proven. Reads Predecessors only: any real network has tasks with
-    predecessors, so Successors would double the cost to learn nothing more.
+    Both matter, and checking only the first is what an earlier version of this
+    probe got wrong. A project can be 92% linked and still yield no critical
+    path, because Microsoft Project excludes manually scheduled tasks from the
+    calculation -- the network exists and CPM does not traverse it. Measured on
+    a real 8,429-task schedule: 2,758 of 3,000 detail tasks linked, all 3,000
+    manual, zero marked critical.
+
+    Costs two property reads per detail task until the ceiling is reached.
     """
     probe["detail"] += 1
     if not probe["probing"]:
         return
     try:
-        if task.Predecessors:
-            probe["linked"] += 1
-            if probe["linked"] >= _LINK_PROBE_CEILING:
-                probe["probing"] = False
+        tem_pred = bool(task.Predecessors)
     except Exception:
-        pass
+        tem_pred = False
+    try:
+        eh_manual = bool(task.Manual)
+    except Exception:
+        eh_manual = False
+
+    if tem_pred:
+        probe["linked"] += 1
+    if eh_manual:
+        probe["manual"] += 1
+    if tem_pred and not eh_manual:
+        probe["auto_linked"] += 1
+        if probe["auto_linked"] >= _PROBE_CEILING:
+            probe["probing"] = False
 
 
 def _probe_report(probe):
     """Diagnostics block for the response."""
+    parcial = not probe["probing"]
+    def conta(chave):
+        return ">= %d (stopped counting)" % _PROBE_CEILING if parcial else probe[chave]
     return {
         "detail_tasks_scanned": probe["detail"],
-        "with_predecessor": (
-            probe["linked"] if probe["probing"]
-            else ">= %d (stopped counting)" % _LINK_PROBE_CEILING
-        ),
+        "with_predecessor": conta("linked"),
+        "manually_scheduled": conta("manual"),
+        "auto_and_linked": conta("auto_linked"),
     }
 
 
 def _network_warning(probe, o_que):
-    """Warning when there is no network to compute `o_que` over, else None."""
-    if probe["detail"] == 0 or probe["linked"] > 0:
+    """Warning when `o_que` cannot be computed on this project, else None.
+
+    Two distinct causes, and the remedy differs, so they get distinct
+    messages: a project with no links needs dependencies; a linked project of
+    manual tasks needs those tasks switched to automatic scheduling.
+    """
+    if probe["detail"] == 0 or probe["auto_linked"] > 0:
         return None
+
+    comum = (
+        "%s is computed over the dependency network, so on this project it has "
+        "nothing to compute and the numbers above should not be read as a "
+        "result. Every CPM-based tool here -- critical path, slack, what-if "
+        "delay, schedule analysis -- is equally undefined on it." % o_que
+    )
+
+    if probe["linked"] == 0:
+        return (
+            "No dependency network found: none of the %d detail tasks has a "
+            "predecessor. %s This happens when a schedule carries fixed dates "
+            "instead of links, or was exported from a planning method that "
+            "does not use CPM."
+            % (probe["detail"], comum)
+        )
+
     return (
-        "No dependency network found: none of the %d detail tasks has a "
-        "predecessor. %s is computed over the links between tasks, so on this "
-        "project it has nothing to compute and the numbers above should not be "
-        "read as a result. This happens when a schedule is manually scheduled "
-        "throughout, or was exported from a planning method that does not use "
-        "CPM. Every CPM-based tool here -- critical path, slack, what-if delay, "
-        "schedule analysis -- is equally undefined on it."
-        % (probe["detail"], o_que)
+        "The links exist but Microsoft Project cannot compute over them: %d of "
+        "the %d detail tasks have a predecessor, and every task that has one is "
+        "MANUALLY SCHEDULED. Manual tasks are excluded from critical path "
+        "calculation, so the network is there and unused. %s To get a critical "
+        "path, switch the linked tasks to automatic scheduling."
+        % (probe["linked"], probe["detail"], comum)
     )
 
 

@@ -31,6 +31,7 @@ from msp_core import (
     vista_com,
     VistaCOM,
     _dia,
+    _dt_de_vista,
     _find_task,
     _fmt_date,
     _get_mpd,
@@ -256,6 +257,29 @@ def get_schedule_analysis() -> str:
     return responder(saida)
 
 
+def _ids_de_predecessores(texto):
+    """The row IDs named by a predecessor string, as strings.
+
+    Parses the same shape the old nested loop did -- the leading digits of
+    each entry, so "5FS+2d" yields "5" -- and accepts both separators,
+    because the list separator is locale-dependent: an English install of
+    Microsoft Project joins with "," and a Portuguese one with ";", and the
+    parsed-file backend joins with ";" regardless. Splitting on only one of
+    them finds no successors at all on the other, which reads as "every task
+    is an orphan" rather than as a parse failure.
+    """
+    for parte in (texto or "").replace(";", ",").split(","):
+        parte = parte.strip()
+        num = ""
+        for ch in parte:
+            if ch.isdigit():
+                num += ch
+            else:
+                break
+        if num:
+            yield num
+
+
 @mcp.tool()
 def validate_schedule() -> str:
     """
@@ -266,7 +290,11 @@ def validate_schedule() -> str:
     """
     app   = get_app()
     proj  = get_proj(app)
+    mpd   = _get_mpd(proj)
     today = datetime.datetime.now()
+
+    lidas, origem = msp_fast.varredura(proj)
+    fonte = lidas if lidas is not None else vista_com(proj, mpd)
 
     issues = {
         "orphan_tasks":       {"count": 0, "tasks": []},
@@ -277,24 +305,38 @@ def validate_schedule() -> str:
         "negative_slack":     {"count": 0, "tasks": []},
     }
 
-    total_tasks = 0
-    tasks_list  = []  # (task, is_summary, outline_level)
+    # Materialised because "empty summary" is decided by looking at the NEXT
+    # task, and because the orphan pass below needs two walks over the same
+    # tasks. A COM view holds no field until asked, so a list of them costs
+    # the enumeration, not 35 reads each.
+    tarefas = list(fonte)
+    total_tasks = len(tarefas)
 
-    for t in proj.Tasks:
-        if t is None:
-            continue
-        total_tasks += 1
-        tasks_list.append(t)
+    # Who is somebody else's predecessor -- built ONCE, in a single pass.
+    #
+    # This used to be a nested loop: for every detail task, walk the whole
+    # task list re-reading Predecessors to see whether this task's row ID
+    # appeared in it. That is O(n^2) COM property reads -- on the reference
+    # 8,429-task schedule about 71 million of them at 0.240 ms each, which is
+    # not slow but unusable. One pass building the set of referenced row IDs
+    # answers the same question by membership.
+    #
+    # Values are the UniqueIDs that named that row, not just a count, so the
+    # exclusion the nested loop made explicit ("skip the task itself") still
+    # holds: a task that somehow lists its own row is not its own successor.
+    referenciados = {}
+    for v in tarefas:
+        for rid in _ids_de_predecessores(v["predecessors"]):
+            referenciados.setdefault(rid, set()).add(v["unique_id"])
 
-    for i, t in enumerate(tasks_list):
-        tid = {"unique_id": t.UniqueID, "name": t.Name}
+    for i, v in enumerate(tarefas):
+        tid = {"unique_id": v["unique_id"], "name": v["name"]}
 
         # Empty summaries: summary with no children
-        if t.Summary:
+        if v["summary"]:
             has_child = False
-            if i + 1 < len(tasks_list):
-                next_t = tasks_list[i + 1]
-                if next_t.OutlineLevel > t.OutlineLevel:
+            if i + 1 < len(tarefas):
+                if tarefas[i + 1]["outline_level"] > v["outline_level"]:
                     has_child = True
             if not has_child:
                 issues["empty_summaries"]["count"] += 1
@@ -302,64 +344,34 @@ def validate_schedule() -> str:
             continue  # Skip non-leaf checks for summaries
 
         # Orphan tasks: no predecessors AND no successors
-        preds = (t.Predecessors or "").strip()
-        # Check if this task is a predecessor for any other task
-        has_successor = False
-        task_id_str = str(t.ID)
-        for other in tasks_list:
-            if other is None or other.UniqueID == t.UniqueID:
-                continue
-            other_preds = (other.Predecessors or "").strip()
-            if other_preds:
-                # Check if our task ID appears in other's predecessors
-                for part in other_preds.split(","):
-                    part = part.strip()
-                    # Extract the numeric ID from predecessor string like "5FS" or "5"
-                    num = ""
-                    for ch in part:
-                        if ch.isdigit():
-                            num += ch
-                        else:
-                            break
-                    if num == task_id_str:
-                        has_successor = True
-                        break
-            if has_successor:
-                break
+        preds = (v["predecessors"] or "").strip()
+        has_successor = bool(referenciados.get(str(v["id"]), set())
+                             - {v["unique_id"]})
 
         if not preds and not has_successor:
             issues["orphan_tasks"]["count"] += 1
             issues["orphan_tasks"]["tasks"].append(tid)
 
         # No resources (non-milestone)
-        if not t.Milestone and not (t.ResourceNames or "").strip():
+        if not v["milestone"] and not (v["resource_names"] or "").strip():
             issues["no_resources"]["count"] += 1
             issues["no_resources"]["tasks"].append(tid)
 
         # Past due, zero progress
-        try:
-            fin = _to_naive(t.Finish)
-            if fin and fin < today and t.PercentComplete == 0:
-                issues["past_due_no_progress"]["count"] += 1
-                issues["past_due_no_progress"]["tasks"].append(tid)
-        except Exception:
-            pass
+        fin = _dt_de_vista(v["finish"])
+        if fin and fin < today and (v["percent_complete"] or 0) == 0:
+            issues["past_due_no_progress"]["count"] += 1
+            issues["past_due_no_progress"]["tasks"].append(tid)
 
         # Missing dates
-        try:
-            if not t.Start or not t.Finish:
-                issues["missing_dates"]["count"] += 1
-                issues["missing_dates"]["tasks"].append(tid)
-        except Exception:
-            pass
+        if not v["start"] or not v["finish"]:
+            issues["missing_dates"]["count"] += 1
+            issues["missing_dates"]["tasks"].append(tid)
 
         # Negative slack
-        try:
-            if t.TotalSlack is not None and t.TotalSlack < 0:
-                issues["negative_slack"]["count"] += 1
-                issues["negative_slack"]["tasks"].append(tid)
-        except Exception:
-            pass
+        if (v["total_slack_days"] or 0) < 0:
+            issues["negative_slack"]["count"] += 1
+            issues["negative_slack"]["tasks"].append(tid)
 
     # Every category can name thousands of tasks. The counts stay exact --
     # the health score is computed from them -- and only the lists are cut,
@@ -376,6 +388,7 @@ def validate_schedule() -> str:
     return responder({
         "project":      proj.Name,
         "health_score": health_score,
+        "source":       origem,
         "issues":       issues,
         "summary": {
             "total_tasks":  total_tasks,

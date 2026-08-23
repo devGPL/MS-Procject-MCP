@@ -147,6 +147,50 @@ def sem_origem(valor):
     return valor
 
 
+# --- o que a tabela de leitores deve produzir ----------------------------
+#
+# The parity checks above compare the two BODIES, and both get their fields
+# from the same table of readers -- so a reader that returns the wrong thing
+# is wrong on both sides and they still agree. These expectations are written
+# out by hand, against the fixture rather than against the code, and are the
+# only check here that a field means what it says.
+
+CAMPOS_ESPERADOS = (
+    "unique_id", "id", "name", "outline_level", "wbs", "summary", "milestone",
+    "start", "finish", "duration_days", "percent_complete", "actual_start",
+    "actual_finish", "remaining_duration_days", "total_slack_days",
+    "free_slack_days", "deadline", "priority", "constraint_type",
+    "constraint_date", "manual", "type", "predecessors", "resource_names",
+    "notes", "critical", "active", "rag", "text1", "text2", "text3",
+    "flag1", "flag2", "hyperlink", "hyperlink_text",
+)
+
+# Keyed by UniqueID; only the fields the converted tools branch on.
+ESPERADO = {
+    2: {"name": "Requisitos", "summary": False, "milestone": False,
+        "critical": True, "manual": False, "active": True, "text1": "Red",
+        "rag": "Red", "percent_complete": 0, "outline_level": 2,
+        "total_slack_days": 0.0, "free_slack_days": 0.0, "duration_days": 10.0,
+        "constraint_type": "ASAP", "predecessors": "", "resource_names": "Alice"},
+    3: {"name": "Desenho", "summary": False, "critical": False,
+        "manual": False, "text1": "Amber", "percent_complete": 50,
+        "total_slack_days": 10.0, "free_slack_days": 5.0, "flag1": True,
+        "constraint_type": "SNET", "constraint_date": "2026-02-02 00:00:00",
+        "predecessors": "2FS", "resource_names": "Bob, Alice",
+        "duration_days": 15.0},
+    4: {"name": "Marco de Revisao", "milestone": True, "manual": True,
+        "duration_days": 0, "text1": "Green", "critical": False,
+        "predecessors": "3FS"},
+    6: {"name": "Construcao", "critical": True, "percent_complete": 100,
+        "manual": False, "text2": "Fase 2", "notes": "nota",
+        "resource_names": "Carol", "total_slack_days": 0.0,
+        "duration_days": 30.0, "type": "FixedUnits", "priority": 500},
+    7: {"name": "Treinamento", "manual": True, "active": False,
+        "total_slack_days": 20.0, "free_slack_days": 10.0,
+        "percent_complete": 0, "summary": False},
+}
+
+
 async def chamar(nome, **kwargs):
     resultado = await mcp.call_tool(nome, kwargs)
     conteudo = resultado[0] if isinstance(resultado, tuple) else resultado
@@ -290,6 +334,21 @@ async def rodar():
         ok("chave inexistente levanta KeyError", False)
     except KeyError:
         ok("chave inexistente levanta KeyError", True)
+
+    print("\n=== O QUE OS LEITORES DEVEM DEVOLVER ===")
+    ok("a tabela publica exatamente os 35 campos esperados",
+       list(msp_core.CAMPOS_TAREFA) == list(CAMPOS_ESPERADOS),
+       "sobrando %s / faltando %s"
+       % (sorted(set(msp_core.CAMPOS_TAREFA) - set(CAMPOS_ESPERADOS)),
+          sorted(set(CAMPOS_ESPERADOS) - set(msp_core.CAMPOS_TAREFA))))
+
+    por_uid = {msp_core.task_to_dict(t, MPD)["unique_id"]:
+               msp_core.task_to_dict(t, MPD) for t in tarefas}
+    for uid, esperado in ESPERADO.items():
+        lido = por_uid[uid]
+        erradas = {k: (v, lido.get(k)) for k, v in esperado.items()
+                   if lido.get(k) != v}
+        ok("tarefa %d lida campo a campo" % uid, not erradas, str(erradas))
 
 
 def main():

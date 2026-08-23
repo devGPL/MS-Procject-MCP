@@ -41,6 +41,12 @@ Ele fica aguardando no stdin — é o transporte do MCP. `Ctrl+C` encerra. Se ap
 
 `python server.py` continua funcionando de forma idêntica, caso prefira não instalar.
 
+Para ligar o caminho rápido de leitura (leia [Dois caminhos de leitura](#dois-caminhos-de-leitura) antes — ele não funciona em Windows ARM64):
+
+```bash
+pip install -e ".[fast]"
+```
+
 > **Antes de usar qualquer ferramenta**: o MS Project precisa estar aberto com um arquivo carregado. O servidor se conecta a uma instância já em execução; ele não abre o Project sozinho.
 
 > **Por que `pip install -e .` e não `pip install mcp pywin32`**: o erro mais comum de configuração é instalar as dependências num interpretador e apontar o cliente MCP para outro. Com o pacote instalado, o `msproject-mcp` que o cliente executa é o do ambiente que tem as bibliotecas — e some o caminho absoluto do JSON de configuração.
@@ -289,6 +295,37 @@ Toda consulta (`get_task`, `get_tasks`, etc.) devolve 35+ campos por tarefa, ent
 
 ---
 
+## Dois caminhos de leitura
+
+Quatorze ferramentas de leitura respondem a partir do **arquivo `.mpp` salvo** quando conseguem, e caem no COM quando não conseguem. Toda resposta diz qual dos dois respondeu, no bloco `source`.
+
+O motivo é medido. Numa agenda real de 8.429 tarefas:
+
+| | |
+|---|---|
+| Obter um objeto tarefa pelo COM | 2,635 ms |
+| Ler uma propriedade dele | 0,240 ms |
+| Enumeração como fatia de uma varredura | 83% |
+| Piso para tocar todas as tarefas pelo COM | ~20 s |
+| Ler as mesmas 8.429 do arquivo (`mpxj`) | ~1,6 s |
+
+Enumerar é o caro; otimizar a leitura de propriedade ataca 17% do problema.
+
+**Quem usa:** `get_tasks` · `get_task` · `search_tasks` · `get_tasks_by_rag` · `get_overdue_tasks` · `get_tasks_by_resource` · `get_progress_summary` · `get_wbs_structure` · `filter_tasks` · `group_tasks_by` · `get_progress_by_wbs` · `get_constraints` · `export_csv` · `get_critical_path` · `get_schedule_analysis` · `find_available_slack`
+
+As demais continuam só no COM porque precisam de campos que o arquivo não entrega por essa via: linha de base (`get_milestone_report`, `get_variance_report`), trabalho (`get_actual_work`), séries timephased, objetos de dependência (`get_critical_path_sequence`, `what_if_delay`) ou a própria janela (`apply_filter`).
+
+**O que custa.** O caminho rápido lê o arquivo salvo, não o aplicativo em execução — e essa é uma questão de correção, não de velocidade:
+
+- Edições feitas no MS Project e ainda não salvas são invisíveis para ele.
+- Uma escrita deste servidor que não persistisse ficaria invisível para a leitura seguinte. É por isso que toda ferramenta que muta salva.
+
+A decisão é tomada **a cada chamada**, nunca uma vez na inicialização. Quando o MS Project reporta alterações não salvas, a resposta traz `warning` dizendo de quando é o arquivo que respondeu. Se o caminho rápido levantar exceção, a resposta vem pelo COM com `action_required` — falha silenciosa aqui é como uma mudança que não entrega nada continua parecendo que funciona.
+
+**Onde não funciona:** `jpype` não publica wheel para Windows em ARM, e o `mpxj` roda na JVM (Java 9+). Nessas máquinas o módulo se declara indisponível, tudo cai no COM e o `source` diz o motivo.
+
+---
+
 ## Limitações conhecidas
 
 - **Referências COM obsoletas** — com vários projetos abertos, trocar de projeto invalida as referências existentes. Chame `switch_project` antes de operar em outro arquivo.
@@ -314,6 +351,15 @@ python tests/test_phase7.py     # 45 verificações (caminho crítico, what-if)
 
 **180 verificações** em 7 suítes. Não são funções `pytest` — cada suíte é um script sequencial com asserts inline. Todas exigem o MS Project em execução: elas criam e fecham projetos temporários.
 
+Duas suítes tratam dos dois caminhos de leitura:
+
+```bash
+python tests/test_vistas_paridade.py  # 80 verificações — não precisa de Windows
+python tests/test_backend_parity.py   # exige Windows, MS Project e projeto SALVO
+```
+
+`test_vistas_paridade.py` roda cada ferramenta convertida duas vezes sobre um projeto falso — uma forçada pelo COM, outra recebendo a lista já lida — e exige resposta idêntica. Verifica também que o caminho rápido não toca em nenhuma propriedade COM e que uma ferramenta que publica cinco campos não lê trinta e cinco. Ela prova que os dois **corpos** concordam; que o `mpxj` e o Microsoft Project leem o mesmo arquivo do mesmo jeito, só `test_backend_parity.py` prova — e essa nunca rodou, porque a VM de desenvolvimento é ARM64.
+
 Antes de qualquer commit, rode os portões — eles não precisam de Windows nem do MS Project:
 
 ```bash
@@ -336,23 +382,26 @@ python3 tools/snap_tools.py . tools/baseline_tools.json
 
 ## Arquitetura
 
-Dez módulos sobre o framework FastMCP. `server.py` não registra ferramenta alguma: importa os nove módulos que registram e roda o servidor.
+Onze módulos sobre o framework FastMCP. `server.py` não registra ferramenta alguma: importa os nove que registram e roda o servidor.
 
 | Módulo | Ferramentas | Linhas |
 |---|---|---|
-| `server.py` | — | 55 |
-| `msp_core.py` | — | 300 |
-| `msp_projects.py` | 17 | 583 |
-| `msp_tasks_read.py` | 17 | 817 |
-| `msp_tasks_write.py` | 19 | 999 |
-| `msp_dependencies.py` | 5 | 296 |
-| `msp_resources.py` | 11 | 591 |
-| `msp_calendars.py` | 10 | 476 |
-| `msp_schedule.py` | 11 | 786 |
-| `msp_baselines_costs.py` | 6 | 389 |
-| `msp_customfields.py` | 3 | 164 |
+| `server.py` | — | 112 |
+| `msp_core.py` | — | 538 |
+| `msp_fast.py` | — | 422 |
+| `msp_projects.py` | 17 | 635 |
+| `msp_tasks_read.py` | 17 | 869 |
+| `msp_tasks_write.py` | 19 | 1007 |
+| `msp_dependencies.py` | 5 | 297 |
+| `msp_resources.py` | 11 | 605 |
+| `msp_calendars.py` | 10 | 485 |
+| `msp_schedule.py` | 11 | 996 |
+| `msp_baselines_costs.py` | 6 | 388 |
+| `msp_customfields.py` | 3 | 168 |
 
-Total: 5456 linhas.
+Total: 6522 linhas.
+
+`msp_fast.py` é o outro leitor: analisa o `.mpp` salvo com `mpxj` em vez de percorrer o COM, e `msp_core.VistaCOM` apresenta uma tarefa COM sob os mesmos nomes de campo — é o que deixa o corpo de uma ferramenta ser escrito uma vez e servido pelos dois. Ver [Dois caminhos de leitura](#dois-caminhos-de-leitura).
 
 `msp_core.py` é a fronteira COM — nenhum módulo de ferramenta fala com o Microsoft Project sem passar por ele. Todo `import win32com` está **dentro** de corpo de função, nunca no topo. É por isso que os módulos importam limpo em macOS e Linux sem pywin32, e é o que permite aos portões em `tools/` verificarem o registro de ferramentas sem Windows.
 

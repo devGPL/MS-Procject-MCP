@@ -140,11 +140,17 @@ O sha256 do registro (`5af9975e…`) foi congelado antes do primeiro corte e **n
 
 ## 6. Aberto
 
+**Feito depois deste handoff**
+
+- Caminho rápido replicado em mais 14 ferramentas de leitura (`get_tasks`, `get_task`, `search_tasks`, `get_tasks_by_rag`, `get_overdue_tasks`, `get_tasks_by_resource`, `get_progress_summary`, `get_wbs_structure`, `filter_tasks`, `group_tasks_by`, `get_progress_by_wbs`, `get_constraints`, `export_csv`, `get_schedule_analysis`, `find_available_slack`). Duas peças novas: `msp_fast.varredura` decide o backend e devolve o bloco `source`; `msp_core.VistaCOM` apresenta uma tarefa COM sob os nomes de campo que `task_to_dict` publica, lendo cada propriedade só quando alguém pede. `task_to_dict` e a vista saem da mesma tabela de leitores, então um campo não pode existir num lado e faltar no outro.
+- `tests/test_vistas_paridade.py` — 80 verificações, roda no Mac. Cada ferramenta convertida responde duas vezes sobre um projeto falso (uma pelo COM, outra recebendo a lista já lida) e as respostas têm de bater. Testada contra quatro quebras sintéticas: leitor invertido, campo removido da tabela, vista divergente do dict, ordem trocada no caminho rápido — as quatro falham.
+- Regressão contra o `HEAD` anterior: 29 chamadas devolvem saída idêntica byte a byte pelo caminho COM.
+
 **Alto valor**
 
-- Replicar o caminho rápido nas outras 10 ferramentas de leitura pesada (padrão já estabelecido em `get_critical_path`)
-- Rodar `test_backend_parity.py` numa máquina x64 — a paridade nunca foi provada em teste, só observada
+- Rodar `test_backend_parity.py` numa máquina x64 — a paridade COM × `mpxj` nunca foi provada em teste, só observada. A suíte offline prova que os dois *corpos* concordam, não que os dois *leitores* leem igual
 - Payload: `indent=2` → compacto é barato e mede-se na hora
+- `validate_schedule` é O(n²) em leituras COM: para cada tarefa de detalhe relê `Predecessors` de todas as outras. Em 8.429 tarefas são ~71 milhões de leituras. Uma passada única montando o conjunto de sucessores resolve, e o caminho rápido entra junto
 
 **Médio**
 

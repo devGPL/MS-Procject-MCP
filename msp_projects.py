@@ -387,6 +387,11 @@ def cross_project_link(source_project: str, source_unique_id: int, target_projec
     else:
         tgt_task.Predecessors = pred_str
 
+    try:
+        app.FileSave()
+    except Exception:
+        pass
+
     return json.dumps({
         "status":  "linked",
         "source":  {"project": src_proj.Name, "task": src_task.Name, "unique_id": source_unique_id},
@@ -454,6 +459,11 @@ def insert_subproject(file_path: str, after_unique_id: int = 0) -> str:
         return json.dumps({"error": f"Failed to insert subproject: {e}"})
 
     count_after = proj.Tasks.Count
+
+    try:
+        app.FileSave()
+    except Exception:
+        pass
 
     return json.dumps({
         "status":           "inserted",

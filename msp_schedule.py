@@ -439,6 +439,11 @@ def calculate_project() -> str:
     """
     app = get_app()
     app.CalculateProject()
+    try:
+        app.FileSave()
+    except Exception:
+        pass
+
     return json.dumps({"status": "calculated", "project": app.ActiveProject.Name})
 
 

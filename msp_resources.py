@@ -297,6 +297,11 @@ def bulk_assign_resources(assignments_json: str) -> str:
         app.CalculateProject()
         app.Calculation = -1
 
+    try:
+        app.FileSave()
+    except Exception:
+        pass
+
     return json.dumps({
         "assigned":          assigned,
         "errors":            errors,
@@ -331,6 +336,11 @@ def remove_resource_assignment(task_unique_id: int, resource_name: str) -> str:
         return json.dumps({"error": f"Resource '{resource_name}' not assigned to task '{t.Name}'. Current: {existing}"})
 
     t.ResourceNames = ",".join(filtered) if filtered else ""
+
+    try:
+        app.FileSave()
+    except Exception:
+        pass
 
     return json.dumps({
         "status":           "removed",
@@ -375,6 +385,11 @@ def update_resource(resource_name: str, new_name: str = "", max_units: float = -
     if cost_per_use >= 0:
         resource.CostPerUse = cost_per_use
         changed.append("cost_per_use")
+
+    try:
+        app.FileSave()
+    except Exception:
+        pass
 
     return json.dumps({
         "status":  "updated",

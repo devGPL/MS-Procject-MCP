@@ -870,6 +870,11 @@ def bulk_set_deadlines(deadlines_json: str) -> str:
             except Exception as e:
                 errors.append({"unique_id": uid, "error": str(e)})
 
+    try:
+        app.FileSave()
+    except Exception:
+        pass
+
     return json.dumps({
         "set":       set_count,
         "cleared":   cleared,

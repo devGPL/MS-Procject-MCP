@@ -55,6 +55,11 @@ def rename_custom_fields(fields_json: str) -> str:
         except Exception as e:
             renamed.append({"field": field_key, "error": str(e)})
 
+    try:
+        app.FileSave()
+    except Exception:
+        pass
+
     return json.dumps({"renamed": len([r for r in renamed if "error" not in r]),
                        "results": renamed}, indent=2)
 

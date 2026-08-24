@@ -6,7 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "msproject-mcp"
 version = "0.7.1"
 description = "Control Microsoft Project via COM automation through the Model Context Protocol"
-readme = "README.md"
+# PyPI mostra este arquivo enxuto; a doc completa continua no README.md do repo.
+readme = "README-pypi.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{ name = "Thomas Faria", email = "ti@gplincorporadora.com.br" }]

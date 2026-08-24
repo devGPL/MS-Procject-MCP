@@ -1,5 +1,5 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.devGPL/msproject-mcp",
   "description": "Control Microsoft Project via COM automation through the Model Context Protocol",
   "version": "0.7.1",

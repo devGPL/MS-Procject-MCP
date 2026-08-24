@@ -4,6 +4,10 @@
 
 Modularização do servidor e as correções que ela tornou visíveis.
 
+### Página do PyPI
+
+**O PyPI passa a mostrar um README próprio, só de instalação.** A página do pacote exibia o README completo do repositório (456 linhas, incluindo detalhes do ambiente de desenvolvimento). O `pyproject.toml` agora aponta para `README-pypi.md`: requisitos, `pip install msproject-mcp`, extra `[fast]`, registro nos clientes MCP e link para a documentação completa no GitHub. O README do repositório segue intacto como doc autoritativa. Versão vai a 0.7.1 porque a descrição no PyPI é congelada por versão publicada.
+
 ### Tamanho das respostas
 
 **`get_tasks` devolvia 8,07 MB num cronograma real; passa a devolver ~82 KB.** Medido ponta a ponta com 8.243 tarefas: `filter_tasks` 7,66 MB → 81,7 KB, `get_schedule_analysis` 1,93 MB → 37,4 KB, `get_wbs_structure` 3,51 MB → 43,6 KB.

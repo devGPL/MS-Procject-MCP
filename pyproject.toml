@@ -4,11 +4,26 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "msproject-mcp"
-version = "0.7.0"
+version = "0.7.1"
 description = "Control Microsoft Project via COM automation through the Model Context Protocol"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
+authors = [{ name = "Thomas Faria", email = "ti@gplincorporadora.com.br" }]
+keywords = ["mcp", "model-context-protocol", "microsoft-project", "msproject", "com", "pywin32", "project-management"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Scheduling",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     # Capped below 1.20 deliberately, and the cap is load-bearing.
     #
@@ -51,7 +66,9 @@ fast = [
 msproject-mcp = "server:main"
 
 [project.urls]
+Homepage = "https://github.com/devGPL/MS-Procject-MCP"
 Repository = "https://github.com/devGPL/MS-Procject-MCP"
+Issues = "https://github.com/devGPL/MS-Procject-MCP/issues"
 
 [tool.setuptools]
 # Flat modules, not a package: server.py imports its nine siblings directly.

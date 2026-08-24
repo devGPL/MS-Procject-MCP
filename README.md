@@ -4,6 +4,8 @@ Controla o Microsoft Project via automação COM através do Model Context Proto
 
 99 ferramentas para ler, editar e analisar cronogramas direto do seu assistente de IA — sem sair do chat.
 
+<!-- mcp-name: io.github.devGPL/msproject-mcp -->
+
 ---
 
 ## Requisitos

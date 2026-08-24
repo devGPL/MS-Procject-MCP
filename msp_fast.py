@@ -35,13 +35,32 @@ WHERE IT DOES NOT WORK
 ----------------------
 mpxj runs on the JVM through jpype, and jpype publishes no wheel for Windows
 on ARM. On that platform this module reports itself unavailable and everything
-falls back to COM -- correctly, but slowly. Java 9 or later is required.
+falls back to COM -- correctly, but slowly. Java 9 or later is required, and
+it must be a runtime that ships jdk.charsets: mpxj reads MacRoman-encoded
+fields, and a trimmed jlink runtime without that module (the PyPI jdk4py
+package is one) dies in CharsetHelper with UnsupportedCharsetException.
+
+START ORDER
+-----------
+jpype.startJVM() must run BEFORE pywin32 initialises COM on the thread.
+Reported against 0.7.2 on Windows 11 / JDK 21: with the STA already up on the
+calling thread, startJVM blocks for ~60 seconds before returning -- and it
+returns successfully, so nothing here can detect the condition after the
+fact. Sixty seconds is exactly the tool-call timeout of common MCP clients,
+which then kill and restart the server, so the parse cache never survives to
+the second call and every scan times out forever. server.py therefore starts
+the JVM eagerly in main(), before any tool can touch COM (about one second in
+that order). The lazy start below remains for direct imports -- tests,
+scripts, anything that never went through main().
 """
 
 import os
+import threading
 
-# Resolved once, lazily. None means "not tried yet".
+# Resolved once, lazily. None means "not tried yet". The lock makes the eager
+# start in server.main() and a first tool call agree on a single JVM.
 _estado = None
+_estado_lock = threading.Lock()
 
 
 def _iniciar():
@@ -71,19 +90,21 @@ def _iniciar():
     return True, "ready"
 
 
+def _garantir_estado():
+    global _estado
+    with _estado_lock:
+        if _estado is None:
+            _estado = _iniciar()
+        return _estado
+
+
 def disponivel():
     """True when this path can be used at all on this machine."""
-    global _estado
-    if _estado is None:
-        _estado = _iniciar()
-    return _estado[0]
+    return _garantir_estado()[0]
 
 
 def motivo_indisponivel():
-    global _estado
-    if _estado is None:
-        _estado = _iniciar()
-    return _estado[1]
+    return _garantir_estado()[1]
 
 
 def _mtime(caminho):

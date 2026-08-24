@@ -23,7 +23,9 @@ open; the server attaches to a live instance rather than launching one.
 """
 
 import argparse
+import os
 import sys
+import time
 
 from msp_core import mcp, limpar_titulos_do_schema
 
@@ -101,6 +103,24 @@ Parallels or VMware host-only network, and leave it on 127.0.0.1 otherwise.
     # protocol. Diagnostics go to stderr.
     print("Starting MS Project MCP Server...", file=sys.stderr)
     print("MS Project must be running with a file open before using tools.", file=sys.stderr)
+
+    # The JVM for the fast read path must start BEFORE anything initialises
+    # COM on this thread. With the STA already up, jpype.startJVM() blocks for
+    # ~60 seconds -- exactly the tool-call timeout of common MCP clients, which
+    # kill and restart the server on timeout, so the parse cache never survives
+    # to a second call and every scanning tool times out forever. Started here,
+    # ahead of the first tool call, the same JVM is up in about a second.
+    # Costs nothing without the [fast] extra: disponivel() fails on the import
+    # long before startJVM. See the START ORDER note in msp_fast.py.
+    if os.environ.get("MSPROJECT_MCP_LAZY_JVM") != "1":
+        import msp_fast
+        inicio = time.monotonic()
+        if msp_fast.disponivel():
+            print("Fast read path ready: JVM started in %.1fs."
+                  % (time.monotonic() - inicio), file=sys.stderr)
+        else:
+            print("Fast read path unavailable (COM answers everything): %s"
+                  % msp_fast.motivo_indisponivel(), file=sys.stderr)
 
     if args.transport != "stdio":
         mcp.settings.host = args.host

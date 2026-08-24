@@ -326,6 +326,14 @@ A decisão é tomada **a cada chamada**, nunca uma vez na inicialização. Quand
 
 **Onde não funciona:** `jpype` não publica wheel para Windows em ARM, e o `mpxj` roda na JVM (Java 9+). Nessas máquinas o módulo se declara indisponível, tudo cai no COM e o `source` diz o motivo.
 
+**Ordem de inicialização.** `jpype.startJVM()` precisa rodar **antes** de qualquer inicialização de COM na thread: com a STA já de pé, a chamada bloqueia por ~60 segundos — exatamente o timeout de tool call de clientes MCP comuns, que matam e recriam o servidor, e assim o cache do parse nunca sobrevive à segunda chamada. Por isso o servidor sobe a JVM ansiosamente no `main()`, antes da primeira ferramenta tocar o COM (~1 s nessa ordem). `MSPROJECT_MCP_LAZY_JVM=1` desliga o start ansioso e volta ao comportamento antigo, se precisar.
+
+**Pegadinhas do Java em clientes MCP:**
+
+- Clientes MCP lançam o servidor com **ambiente reduzido** — o `JAVA_HOME` do seu usuário pode não chegar ao processo. Se o caminho rápido se declarar indisponível por "could not start a JVM", defina `JAVA_HOME` no bloco `env` da configuração do cliente.
+- O runtime precisa do módulo **`jdk.charsets`** (o `mpxj` lê campos em MacRoman). Runtimes jlink enxutos — o pacote PyPI `jdk4py`, por exemplo — não o incluem e falham com `UnsupportedCharsetException: MacRoman`; nesse caso o servidor cai no COM e o `source` traz o motivo. Confira com `java --list-modules`.
+- O Java 8 (download padrão de java.com) não atende — o `mpxj` exige 9+; um JDK LTS recente (17/21) é o caminho seguro.
+
 ---
 
 ## Tamanho das respostas

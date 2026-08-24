@@ -20,7 +20,7 @@ Respostas acima de 4 KB saem em JSON compacto; abaixo disso seguem indentadas.
 
 ### Leitura
 
-**Quatorze ferramentas de leitura passam a responder do arquivo salvo quando podem.** Antes só `get_critical_path` fazia isso. Agora também `get_tasks`, `get_task`, `search_tasks`, `get_tasks_by_rag`, `get_overdue_tasks`, `get_tasks_by_resource`, `get_progress_summary`, `get_wbs_structure`, `filter_tasks`, `group_tasks_by`, `get_progress_by_wbs`, `get_constraints`, `export_csv`, `get_schedule_analysis` e `find_available_slack`. Toda resposta ganha um bloco `source` dizendo qual caminho respondeu e por quê — e um `warning` quando o MS Project reporta alterações não salvas. Requer `pip install -e ".[fast]"`; sem isso, ou em Windows ARM64, tudo cai no COM e o `source` explica.
+**Dezesseis ferramentas de leitura passam a responder do arquivo salvo quando podem.** Antes só `get_critical_path` fazia isso. Agora também `get_tasks`, `get_task`, `search_tasks`, `get_tasks_by_rag`, `get_overdue_tasks`, `get_tasks_by_resource`, `get_progress_summary`, `get_wbs_structure`, `filter_tasks`, `group_tasks_by`, `get_progress_by_wbs`, `get_constraints`, `export_csv`, `get_schedule_analysis`, `find_available_slack` e `validate_schedule`. Toda resposta ganha um bloco `source` dizendo qual caminho respondeu e por quê — e um `warning` quando o MS Project reporta alterações não salvas. Requer `pip install -e ".[fast]"`; sem isso, ou em Windows ARM64, tudo cai no COM e o `source` explica.
 
 Enumerar uma tarefa pelo COM custa 2,635 ms contra 0,240 ms para ler uma propriedade dela: 83% de uma varredura acontece antes de qualquer campo ser lido. Numa agenda de 8.429 tarefas isso é um piso de ~20 s por ferramenta.
 
@@ -46,7 +46,12 @@ O helper `safe()` do `task_to_dict` era chamado como `safe(t.ActualStart)`. Pyth
 
 Agora esses campos chegam com o padrão declarado — `remaining_duration_days: 0` em vez de erro, `actual_start: null` em vez de exceção propagada. **Uma tarefa com todos os campos presentes serializa exatamente como antes.**
 
-Continua sem proteção: 18 propriedades são lidas sem `safe` nenhum (`UniqueID`, `Name`, `Duration`, `Start`, `Finish` entre outras). Uma delas falhando ainda derruba a listagem.
+**A proteção passou a cobrir os campos onde um default significa "ausente".**
+Antes metade da tabela de leitores era defensiva e metade não, sem razão declarada. Agora `Start`, `Finish`, `WBS`, `Predecessors`, `ResourceNames`, `Notes`, `Deadline`, `Priority`, as folgas, os textos, os flags, `Milestone`, `Critical` e `Active` sobrevivem a uma leitura COM que falhe, cada um com seu padrão declarado — uma tarefa ilegível custa aquele campo, não a varredura inteira.
+
+Sete leitores continuam **crus de propósito**, e a tabela agora diz por quê: identidade (`unique_id`, `id`, `name`), estrutura (`outline_level`, `summary`) e medição (`percent_complete`, `duration_days`). Nesses, um default não seria "ausente" e sim uma afirmação sobre o projeto — identidade inventada publica a tarefa errada, estrutura inventada remonta a árvore WBS, e `0` de medição vira achado do `validate_schedule`. Uma falha ali deve chegar ao chamador, não virar número plausível.
+
+No caminho de sucesso, quatro campos guardados se aproximam do backend de arquivo: `Predecessors`, `Notes`, `ResourceNames` e `WBS` publicam `""` onde o COM devolvia `None`, e `active` cai para `True` em vez de `False` — o mpxj já respondia assim, então os dois backends concordam em mais coisa.
 
 **Recurso sem nome no pool deixa de ser fatal.**
 `assign_resource`, `get_resource_workload`, `update_resource` e `delete_resource` chamavam `r.Name.lower()` sem verificar. Um único recurso sem nome em qualquer posição do pool fazia as quatro falharem com `AttributeError`, **independentemente de qual recurso estava sendo buscado** — a varredura passa por ele no caminho. Agora recursos sem nome são ignorados.
@@ -67,6 +72,7 @@ A diferença é observável: uma tarefa excluída no meio do mesmo lote continua
 - `server.py` deixou de ser um arquivo único de 5.206 linhas e virou um entry point de 55 linhas que importa nove módulos de domínio. Nenhuma ferramenta foi editada durante a divisão.
 - `msp_core.py` concentra a fronteira COM. Todo `import win32com` está dentro de corpo de função, então os módulos importam em macOS e Linux sem `pywin32`.
 - Lookups reimplementados inline foram consolidados: 13 varreduras de `BaseCalendars` viraram 2, 8 buscas de recurso viraram 1, 8 mapas de `UniqueID` viraram 2.
+- A detecção de órfãs do `validate_schedule` deixou de ser O(n²) em leituras COM. Para cada tarefa de detalhe ela relia `Predecessors` de todas as outras: ~71 milhões de leituras numa agenda de 8.429 tarefas, o bastante para tornar a ferramenta inutilizável ali. Uma passada monta o mapa `linha → quem a cita` e o teste vira consulta de pertinência. No caminho, um bug de locale: o separador da lista de predecessores é `,` numa instalação inglesa e `;` numa portuguesa (e o backend de arquivo usa `;` sempre), então dividir só por um deles não achava sucessor nenhum no outro — lido como "toda tarefa é órfã". O parser agora aceita os dois.
 - Constantes duplicadas (`CONSTRAINT_NAMES`, `TIMESCALE_MAP`) e três cópias locais de formatador de data foram eliminadas.
 
 ### Empacotamento

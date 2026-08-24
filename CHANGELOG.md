@@ -1,12 +1,14 @@
 # Changelog
 
-## Não publicado
-
-Modularização do servidor e as correções que ela tornou visíveis.
+## 0.7.2 — não publicado
 
 ### Página do PyPI
 
-**O PyPI passa a mostrar um README próprio, só de instalação.** A página do pacote exibia o README completo do repositório (456 linhas, incluindo detalhes do ambiente de desenvolvimento). O `pyproject.toml` agora aponta para `README-pypi.md`: requisitos, `pip install msproject-mcp`, extra `[fast]`, registro nos clientes MCP e link para a documentação completa no GitHub. O README do repositório segue intacto como doc autoritativa. Versão vai a 0.7.1 porque a descrição no PyPI é congelada por versão publicada.
+**O PyPI passa a mostrar um README próprio, só de instalação.** A página do pacote exibia o README completo do repositório (456 linhas, incluindo detalhes do ambiente de desenvolvimento). O `pyproject.toml` agora aponta para `README-pypi.md`: requisitos, `pip install msproject-mcp`, extra `[fast]`, registro nos clientes MCP e link para a documentação completa no GitHub. O README do repositório segue intacto como doc autoritativa. O 0.7.1 saiu no PyPI antes deste readme, e a descrição publicada é imutável — daí o 0.7.2.
+
+## 0.7.1 — 2026-08-24
+
+Modularização do servidor e as correções que ela tornou visíveis. Primeira publicação no PyPI (`pip install msproject-mcp`); `server.json` preparado para o MCP Registry.
 
 ### Tamanho das respostas
 
